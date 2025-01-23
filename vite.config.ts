@@ -20,10 +20,22 @@ export default defineConfig(({ mode }) => {
         PROD: isProd,
         DEV: !isProd,
         MODE: JSON.stringify(mode)
-      }
+      },
+      global: {},
     },
     plugins: [react()],
     base: '/',
+    optimizeDeps: {
+      exclude: ['fs', 'path', 'os', 'crypto'],
+    },
+    build: {
+      rollupOptions: {
+        external: ['fs', 'path', 'os', 'crypto'],
+      },
+      outDir: 'dist',
+      assetsDir: 'assets',
+      assetsInlineLimit: 4096
+    },
     server: {
       port: 3100,
       host: true,
@@ -43,13 +55,9 @@ export default defineConfig(({ mode }) => {
     },
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, './src')
+        '@': path.resolve(__dirname, './src'),
+        crypto: 'crypto-browserify',
       }
-    },
-    build: {
-      outDir: 'dist',
-      assetsDir: 'assets',
-      assetsInlineLimit: 4096
     }
   }
 })

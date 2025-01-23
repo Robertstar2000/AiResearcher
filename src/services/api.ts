@@ -7,8 +7,6 @@ function delay(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-const TOKEN_RATE_LIMIT = 250000;
-const SAFETY_FACTOR = 1.5;
 const MAX_RETRIES = 8;
 const INITIAL_RETRY_DELAY = 1000; // 1 second
 
@@ -31,11 +29,6 @@ async function withRetry<T>(
     
     return withRetry(operation, retryCount + 1, maxRetries, initialDelay);
   }
-}
-
-function calculateDelay(tokensUsed: number) {
-  const delayMs = (tokensUsed / TOKEN_RATE_LIMIT) * 60000 * SAFETY_FACTOR;
-  return Math.max(delayMs, 1000); // At least 1 second delay
 }
 
 // Error handling
@@ -436,56 +429,70 @@ ${typeSpecificInstructions}`
     return await safeApiCall(async () => {
       // Validate configuration
       await this.validateConfig({
-        topic: sections[0].title, // Using first section title as topic
-        researchTarget,
-        mode: mode.toString(),
-        type: type.toString(),
-        sections
+        topic: sections[0]?.title || '',
+        mode: mode,
+        type: type,
+        researchTarget: researchTarget,
+        sections: sections
       });
 
-      const prompt = `Generate detailed academic content for the following research paper section${sections.length > 1 ? 's' : ''} about "${researchTarget}":
+      const prompt = `Generate detailed content for each research section. The research is about: ${researchTarget}
 
-${sections.map(section => `
-Section: ${section.title}
-${section.content ? `Context: ${section.content}` : ''}
-${section.subsections?.length ? `
-Related Subsections:
-${section.subsections.map(sub => `- ${sub.title}`).join('\n')}` : ''}`).join('\n\n')}
+Research Parameters:
+- Mode: ${mode}
+- Type: ${type}
 
-Requirements:
-1. Maintain sophisticated academic discourse appropriate for post-graduate level
-2. Integrate relevant theoretical frameworks and empirical evidence
-3. Include extensive scholarly citations
-4. Develop nuanced arguments and critical analysis
-5. Conclude with a complete References section in APA format
-6. Do not include any section numbers or titles in the content
+Sections to expand:
+${sections.map((section, index) => `${index + 1}. ${section.title}`).join('\n')}
 
-Emphasize depth of analysis while maintaining scholarly rigor.`;
+For each section:
+1. Generate comprehensive, academically-styled content
+2. Maintain academic tone and proper citations
+3. Include relevant examples and explanations
+4. Ensure logical flow between subsections
+5. Keep content focused on the section topic
+
+Format:
+Return a JSON array where each object has:
+{
+  "title": "Section Title",
+  "content": "Generated content..."
+}`;
 
       const completion = await this.groq.chat.completions.create({
         messages: [{ role: 'user', content: prompt }],
-        model: "mixtral-8x7b-32768",
-        temperature: 0.3,
-        max_tokens: 8000,
+        model: 'mixtral-8x7b-32768',
+        temperature: 0.7,
+        max_tokens: 4096,
         top_p: 1,
         stream: false
       });
 
-      const content = completion.choices[0]?.message?.content || '';
-      
-      // Calculate tokens used for next delay
-      const totalTokens = content.split(/\s+/).length * 1.5; // Rough estimate
-      const nextDelay = calculateDelay(totalTokens);
-      await delay(nextDelay);
+      const content = completion.choices[0]?.message?.content;
+      if (!content) throw new ResearchError(ResearchErrorType.GENERATION_ERROR, 'No content generated');
 
-      return sections.map(section => ({
-        ...section,
-        content: content
-      }));
+      try {
+        const parsedContent = JSON.parse(content);
+        if (!Array.isArray(parsedContent)) {
+          throw new ResearchError(ResearchErrorType.GENERATION_ERROR, 'Invalid content format');
+        }
+
+        // Map the generated content back to the original sections
+        return sections.map((section, index) => ({
+          ...section,
+          content: parsedContent[index]?.content || ''
+        }));
+      } catch (error) {
+        throw new ResearchError(
+          ResearchErrorType.GENERATION_ERROR,
+          'Failed to parse generated content',
+          { error }
+        );
+      }
     });
   }
 
-  private async validateConfig(config: {
+  public async validateConfig(config: {
     topic: string;
     mode: string;
     type: string;
@@ -513,4 +520,35 @@ Emphasize depth of analysis while maintaining scholarly rigor.`;
   }
 }
 
-export const researchApi = await ResearchAPI.initialize();
+// Export a singleton instance that will be initialized when needed
+let researchApiInstance: ResearchAPI | null = null;
+
+export const getResearchApi = async () => {
+  if (!researchApiInstance) {
+    researchApiInstance = await ResearchAPI.initialize();
+  }
+  return researchApiInstance;
+};
+
+export const researchApi = {
+  async generateTitle(...args: Parameters<ResearchAPI['generateTitle']>) {
+    const api = await getResearchApi();
+    return api.generateTitle(...args);
+  },
+  async generateOutline(...args: Parameters<ResearchAPI['generateOutline']>) {
+    const api = await getResearchApi();
+    return api.generateOutline(...args);
+  },
+  async generateDetailedOutline(...args: Parameters<ResearchAPI['generateDetailedOutline']>) {
+    const api = await getResearchApi();
+    return api.generateDetailedOutline(...args);
+  },
+  async generateSectionBatch(...args: Parameters<ResearchAPI['generateSectionBatch']>) {
+    const api = await getResearchApi();
+    return api.generateSectionBatch(...args);
+  },
+  async validateConfig(...args: Parameters<ResearchAPI['validateConfig']>) {
+    const api = await getResearchApi();
+    return api.validateConfig(...args);
+  }
+};
