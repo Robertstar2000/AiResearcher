@@ -13,27 +13,35 @@ import './index.css'
 
 console.log('Starting application...')
 
-const rootElement = document.getElementById('root')
-if (!rootElement) {
-  console.error('Failed to find the root element')
-  throw new Error('Failed to find the root element')
+const init = async () => {
+  try {
+    const rootElement = document.getElementById('root')
+    if (!rootElement) {
+      console.error('Failed to find the root element')
+      throw new Error('Failed to find the root element')
+    }
+
+    console.log('Root element found, creating React root...')
+    const root = ReactDOM.createRoot(rootElement)
+
+    console.log('Rendering application...')
+    root.render(
+      <React.StrictMode>
+        <ErrorBoundary>
+          <Provider store={store}>
+            <BrowserRouter>
+              <ThemeProvider theme={theme}>
+                <CssBaseline />
+                <App />
+              </ThemeProvider>
+            </BrowserRouter>
+          </Provider>
+        </ErrorBoundary>
+      </React.StrictMode>
+    )
+  } catch (error) {
+    console.error('Failed to initialize application:', error)
+  }
 }
 
-console.log('Root element found, creating React root...')
-const root = ReactDOM.createRoot(rootElement)
-
-console.log('Rendering application...')
-root.render(
-  <React.StrictMode>
-    <ErrorBoundary>
-      <Provider store={store}>
-        <BrowserRouter>
-          <ThemeProvider theme={theme}>
-            <CssBaseline />
-            <App />
-          </ThemeProvider>
-        </BrowserRouter>
-      </Provider>
-    </ErrorBoundary>
-  </React.StrictMode>
-)
+init()

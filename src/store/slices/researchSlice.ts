@@ -1,17 +1,19 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import { ResearchSection, ResearchMode, ResearchType } from '../../types/research';
+import { ResearchSection } from '../../types/research';
+import { ResearchMode, ResearchType } from '../../services/api';
 
 interface ResearchState {
   mode: ResearchMode;
   type: ResearchType;
   researchTarget: string;
+  title?: string;
   sections?: ResearchSection[];
   error?: string;
 }
 
 const initialState: ResearchState = {
-  mode: 'basic',
-  type: 'general',
+  mode: ResearchMode.Basic,
+  type: ResearchType.General,
   researchTarget: '',
 };
 
@@ -31,12 +33,15 @@ export const researchSlice = createSlice({
     setSections: (state, action: PayloadAction<ResearchSection[]>) => {
       state.sections = action.payload;
     },
+    setTitle: (state, action: PayloadAction<string>) => {
+      state.title = action.payload;
+    },
     setError: (state, action: PayloadAction<string | undefined>) => {
       state.error = action.payload;
     },
   },
 });
 
-export const { setMode, setType, setResearchTarget, setSections, setError } = researchSlice.actions;
+export const { setMode, setType, setResearchTarget, setSections, setTitle, setError } = researchSlice.actions;
 
 export default researchSlice.reducer;

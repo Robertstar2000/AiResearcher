@@ -11,6 +11,17 @@ export const store = configureStore({
     getDefaultMiddleware({
       serializableCheck: false,
     }),
+  devTools: process.env.NODE_ENV !== 'production',
+})
+
+// Log initial state
+console.log('Initial Redux State:', store.getState())
+
+store.subscribe(() => {
+  const state = store.getState()
+  if (state.research.error) {
+    console.error('Research Error:', state.research.error)
+  }
 })
 
 export type RootState = ReturnType<typeof store.getState>

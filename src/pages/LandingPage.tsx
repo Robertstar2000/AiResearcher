@@ -15,7 +15,9 @@ import {
   FormatQuote as FormatQuoteIcon,
   Person as PersonIcon
 } from '@mui/icons-material'
-import Picture5 from '../assets/Picture5.png'
+
+// Import image with type declaration
+const Picture5 = new URL('../assets/Picture5.png', import.meta.url).href
 
 interface Feature {
   icon: React.ReactNode;
@@ -111,6 +113,10 @@ const LandingPage = () => {
               width: 'auto',
               objectFit: 'contain',
               filter: 'drop-shadow(0px 2px 4px rgba(0,0,0,0.2))'
+            }}
+            onError={(e) => {
+              console.error('Error loading image:', e);
+              (e.target as HTMLImageElement).src = 'https://via.placeholder.com/160';
             }}
           />
         </Box>

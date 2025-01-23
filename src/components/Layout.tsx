@@ -47,7 +47,7 @@ const Layout = () => {
               </IconButton>
             </>
           ) : (
-            location.pathname !== '/auth' && (
+            location.pathname === '/' && (
               <Button color="inherit" onClick={() => navigate('/auth')}>
                 Login
               </Button>
@@ -55,7 +55,7 @@ const Layout = () => {
           )}
         </Toolbar>
       </AppBar>
-      <Container component="main" sx={{ flex: 1, py: 3 }}>
+      <Container component="main" sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
         <Outlet />
       </Container>
     </Box>

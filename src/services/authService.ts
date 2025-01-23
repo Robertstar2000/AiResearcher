@@ -1,7 +1,7 @@
-import { researchApi } from './api';
 import { store } from '../store';
 import { logout } from '../store/slices/authSlice';
 import { ResearchError, ResearchException } from './researchErrors';
+import { sqliteService } from './sqliteService';
 
 interface UserMetadata {
   name?: string;
@@ -29,51 +29,24 @@ export async function createUser(credentials: AuthCredentials): Promise<AuthUser
     const normalizedEmail = credentials.email.toLowerCase().trim();
     const trimmedPassword = credentials.password.trim();
 
-    // Create profile directly in the database
-    const { data: profile, error: profileError } = await researchApi.supabase
-      .from('AiResearcherAssistant')
-      .insert({
-        e_mail: normalizedEmail,
-        "User-Name": credentials.metadata?.name || '',
-        PassWord: trimmedPassword,
-        Occupation: credentials.metadata?.occupation || '',
-        Location: credentials.metadata?.geolocation || '',
-        title: '',
-        content: '',
-        references: ''
-      })
-      .select('*')
-      .single();
+    // Create user in SQLite database
+    const user = await sqliteService.createUser({
+      email: normalizedEmail,
+      password: trimmedPassword,
+      name: credentials.metadata?.name || '',
+      occupation: credentials.metadata?.occupation,
+      location: credentials.metadata?.geolocation,
+    });
 
-    if (profileError) {
-      console.error('Profile creation error:', profileError);
-      throw new ResearchException(
-        ResearchError.AUTH_ERROR,
-        'Failed to create user profile',
-        { error: profileError }
-      );
-    }
-
-    if (!profile) {
-      throw new ResearchException(
-        ResearchError.AUTH_ERROR,
-        'Failed to create user profile - no profile returned'
-      );
-    }
-
-    // Return user object
     return {
-      id: profile.id,
-      email: profile.e_mail,
-      name: profile["User-Name"],
-      occupation: profile.Occupation,
-      geolocation: profile.Location
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      occupation: user.occupation,
+      geolocation: user.location,
     };
   } catch (error) {
-    console.error('Error in createUser:', error);
-    if (error instanceof ResearchException) {
-      throw error;
-    }
+    console.error('User creation error:', error);
     throw new ResearchException(
       ResearchError.AUTH_ERROR,
       'Failed to create user',
@@ -87,63 +60,44 @@ export async function authenticateUser(credentials: AuthCredentials): Promise<Au
     // Normalize email and trim password
     const normalizedEmail = credentials.email.toLowerCase().trim();
     const trimmedPassword = credentials.password.trim();
-    
-    console.log('Attempting login with:', { email: normalizedEmail }); // Debug log
-    
-    const { data: profiles, error: queryError } = await researchApi.supabase
-      .from('AiResearcherAssistant')
-      .select('*')
-      .eq('e_mail', normalizedEmail)
-      .eq('PassWord', trimmedPassword);
 
-    if (queryError) {
-      console.error('Login query error:', queryError);
+    // Authenticate using SQLite database
+    const user = await sqliteService.authenticateUser(normalizedEmail, trimmedPassword);
+
+    if (!user) {
       throw new ResearchException(
         ResearchError.AUTH_ERROR,
         'Invalid email or password'
       );
     }
 
-    // Handle case of no results or multiple results
-    if (!profiles || profiles.length === 0) {
-      console.error('No profile found for email:', normalizedEmail);
-      throw new ResearchException(
-        ResearchError.AUTH_ERROR,
-        'Invalid email or password'
-      );
-    }
-
-    // Use the first matching profile
-    const profile = profiles[0];
-
-    console.log('Login successful for:', { email: normalizedEmail }); // Debug log
-    
     return {
-      id: profile.id,
-      email: profile.e_mail,
-      name: profile["User-Name"],
-      occupation: profile.Occupation,
-      geolocation: profile.Location
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      occupation: user.occupation,
+      geolocation: user.location,
     };
   } catch (error) {
     console.error('Authentication error:', error);
-    if (error instanceof ResearchException) {
-      throw error;
-    }
     throw new ResearchException(
       ResearchError.AUTH_ERROR,
-      'Authentication failed',
+      'Failed to authenticate user',
       { error }
     );
   }
 }
 
 // Just clear local state
-export const signOut = async (): Promise<void> => {
+export async function signOut(): Promise<void> {
   try {
     store.dispatch(logout());
   } catch (error) {
     console.error('Sign out error:', error);
-    throw error;
+    throw new ResearchException(
+      ResearchError.AUTH_ERROR,
+      'Failed to sign out',
+      { error }
+    );
   }
-};
+}

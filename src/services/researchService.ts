@@ -13,25 +13,10 @@ async function createResearchOutline(
   type: ResearchType
 ): Promise<ResearchSection[]> {
   try {
-    // Set number of sections based on mode (basic/advanced only, article is handled separately)
-    let sectionCount = 10;  // default for basic
-    if (mode.toLowerCase() === 'advanced') {
-      sectionCount = 30;
-    }
-    
-    // Then generate the outline
-    const outline = await researchApi.generateDetailedOutline(topic, mode, type);
-    
-    // Parse the outline into ResearchSection array
-    const parsedSections: ResearchSection[] = parseOutline(outline);
-    
-    // Ensure we don't exceed the section count based on mode
-    return parsedSections.slice(0, sectionCount);
+    const outline = await generateOutline(topic, mode, type);
+    return parseOutline(outline);
   } catch (error) {
-    if (error instanceof Error) {
-      // Handle unexpected errors
-      throw new Error('An unexpected error occurred while creating the research outline.');
-    }
+    console.error('Error creating research outline:', error);
     throw error;
   }
 }
@@ -52,7 +37,7 @@ function parseOutline(outline: string): ResearchSection[] {
         sections.push(currentSection);
       }
       currentSection = {
-        number: mainSectionMatch[1],
+        number: mainSectionMatch[1].slice(0, -1),
         title: mainSectionMatch[2].trim(),
         content: '',
         subsections: []
@@ -60,11 +45,14 @@ function parseOutline(outline: string): ResearchSection[] {
       currentSubsection = null;
     } else if (subSectionMatch && currentSection) {
       currentSubsection = {
-        number: subSectionMatch[1],
+        number: subSectionMatch[1].slice(0, -1),
         title: subSectionMatch[2].trim(),
         content: ''
       };
-      currentSection.subsections?.push(currentSubsection);
+      if (!currentSection.subsections) {
+        currentSection.subsections = [];
+      }
+      currentSection.subsections.push(currentSubsection);
     } else if (line.trim()) {
       // Add content to either the current subsection or main section
       if (currentSubsection) {
@@ -82,7 +70,20 @@ function parseOutline(outline: string): ResearchSection[] {
   return sections;
 }
 
-// Example of another function utilizing researchApi
+// Function to generate sections with numbers
+async function generateSectionsWithNumbers(
+  sections: ResearchSection[]
+): Promise<ResearchSection[]> {
+  const numberedSections: ResearchSection[] = sections.map((section, index) => ({
+    ...section,
+    number: (index + 1).toString(),
+    content: section.content || ''
+  }));
+
+  return numberedSections;
+}
+
+// Generate content for a single research section
 async function generateResearchSection(
   sectionTitle: string,
   sectionDescription: string,
@@ -91,60 +92,21 @@ async function generateResearchSection(
   type: ResearchType
 ): Promise<string> {
   try {
+    const apiSection = {
+      title: sectionTitle,
+      content: sectionDescription || '',
+    };
+
     const content = await researchApi.generateSectionBatch(
-      [{
-        title: sectionTitle,
-        number: "1.0", // Default section number for single section generation
-        content: sectionDescription
-      }],
+      [apiSection],
       topic,
       mode,
       type
     );
+
     return content[0]?.content || '';
   } catch (error) {
-    if (error instanceof Error) {
-      // Handle unexpected errors
-      throw new Error(`Failed to generate section: ${error.message}`);
-    }
-    throw error;
-  }
-}
-
-// Function to generate sections with numbers
-async function generateSectionsWithNumbers(
-  sections: ResearchSection[],
-  topic: string,
-  mode: ResearchMode,
-  type: ResearchType
-): Promise<ResearchSection[]> {
-  try {
-    if (!sections || sections.length === 0) {
-      throw new Error('No sections provided');
-    }
-
-    const sectionInputs = sections.map(section => ({
-      title: section.title,
-      description: '',
-      number: section.number
-    }));
-
-    const sectionContents = await researchApi.generateSectionBatch(
-      sectionInputs,
-      topic,
-      mode,
-      type
-    );
-
-    return sectionContents.map(content => ({
-      number: content.number,
-      title: content.title,
-      content: content.content
-    }));
-  } catch (error) {
-    if (error instanceof Error) {
-      throw new Error(`Failed to generate sections: ${error.message}`);
-    }
+    console.error('Error generating section:', error);
     throw error;
   }
 }
@@ -156,22 +118,24 @@ async function generateResearchContent(
   type: ResearchType
 ): Promise<ResearchSection[]> {
   try {
-    if (!sections || sections.length === 0) {
-      throw new Error('No sections provided for generation');
-    }
+    const apiSections = sections.map(section => ({
+      title: section.title,
+      content: section.content
+    }));
 
-    const sectionContents = await researchApi.generateSectionBatch(
-      sections,
+    const content = await researchApi.generateSectionBatch(
+      apiSections,
       researchTarget,
       mode,
       type
     );
 
-    return transformApiResponse(sectionContents);
+    return content.map((apiSection, index) => ({
+      ...sections[index],
+      content: apiSection.content || sections[index].content
+    }));
   } catch (error) {
-    if (error instanceof Error) {
-      throw new Error(`Failed to generate research content: ${error.message}`);
-    }
+    console.error('Error generating research content:', error);
     throw error;
   }
 }
@@ -182,15 +146,9 @@ async function generateOutline(
   type: ResearchType
 ): Promise<string> {
   try {
-    return await researchApi.generateOutline(
-      researchTarget,
-      mode,
-      type
-    );
+    return await researchApi.generateOutline(researchTarget, researchTarget, mode, type);
   } catch (error) {
-    if (error instanceof Error) {
-      throw new Error(`Failed to generate outline: ${error.message}`);
-    }
+    console.error('Error generating outline:', error);
     throw error;
   }
 }
@@ -199,12 +157,7 @@ function transformApiResponse(sections: ResearchSection[]): ResearchSection[] {
   return sections.map(section => ({
     ...section,
     content: section.content || '',
-    title: section.title,
-    number: section.number,
-    subsections: section.subsections?.map(sub => ({
-      ...sub,
-      content: sub.content || ''
-    }))
+    number: section.number
   }));
 }
 
@@ -213,7 +166,7 @@ export {
   generateOutline,
   transformApiResponse,
   createResearchOutline,
-  generateResearchSection,
   generateSectionsWithNumbers,
+  generateResearchSection,
   ResearchErrorType
 };

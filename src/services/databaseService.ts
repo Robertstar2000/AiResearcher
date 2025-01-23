@@ -1,5 +1,5 @@
-import { supabase } from './api';
 import { ResearchError, ResearchException } from './researchErrors';
+import { sqliteService } from './sqliteService';
 
 // Types for research data
 export interface ResearchEntry {
@@ -31,45 +31,15 @@ export interface ResearchEntryData {
   updated_at?: string;
 }
 
-// Initialize real-time subscription
-export const initializeRealtimeSubscription = (onUpdate: (payload: any) => void) => {
-  const channel = supabase.channel('custom-filter-channel')
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'research'
-      },
-      (payload) => onUpdate(payload)
-    )
-    .subscribe();
-
-  return () => {
-    channel.unsubscribe();
-  };
-};
-
 // Research operations
 export const saveResearchEntry = async (data: ResearchEntryData): Promise<{ id: string }> => {
   try {
-    const { data: result, error } = await supabase
-      .from('research')
-      .insert({
-        user_id: data.userId,
-        title: data.title,
-        content: data.content,
-        references: data.references,
-        created_at: data.created_at || new Date().toISOString(),
-        updated_at: data.updated_at || new Date().toISOString()
-      })
-      .select('id')
-      .single();
-
-    if (error) throw error;
-    if (!result) throw new Error('No data returned from insert');
-
-    return { id: result.id };
+    return await sqliteService.saveResearchEntry({
+      user_id: data.userId,
+      title: data.title,
+      content: data.content,
+      references: data.references
+    });
   } catch (error) {
     console.error('Error saving research entry:', error);
     throw new ResearchException(
@@ -82,14 +52,7 @@ export const saveResearchEntry = async (data: ResearchEntryData): Promise<{ id: 
 
 export const getResearchEntries = async (userId: string): Promise<ResearchEntry[]> => {
   try {
-    const { data, error } = await supabase
-      .from('research')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return data || [];
+    return await sqliteService.getResearchEntries(userId);
   } catch (error) {
     console.error('Error fetching research entries:', error);
     throw new ResearchException(
@@ -105,12 +68,7 @@ export const updateResearchEntry = async (
   updates: Partial<Omit<ResearchEntry, 'id' | 'created_at'>>
 ): Promise<void> => {
   try {
-    const { error } = await supabase
-      .from('research')
-      .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq('id', id);
-
-    if (error) throw error;
+    await sqliteService.updateResearchEntry(id, updates);
   } catch (error) {
     console.error('Error updating research entry:', error);
     throw new ResearchException(
@@ -123,12 +81,7 @@ export const updateResearchEntry = async (
 
 export const deleteResearchEntry = async (id: string): Promise<void> => {
   try {
-    const { error } = await supabase
-      .from('research')
-      .delete()
-      .eq('id', id);
-
-    if (error) throw error;
+    await sqliteService.deleteResearchEntry(id);
   } catch (error) {
     console.error('Error deleting research entry:', error);
     throw new ResearchException(
@@ -141,17 +94,13 @@ export const deleteResearchEntry = async (id: string): Promise<void> => {
 
 export async function createUser(userData: any): Promise<void> {
   try {
-    const { error } = await supabase
-      .from('AiResearcherAssistant')
-      .insert([userData]);
-
-    if (error) {
-      throw new ResearchException(
-        ResearchError.DATABASE_ERROR,
-        `Failed to create user: ${error.message}`,
-        { error }
-      );
-    }
+    await sqliteService.createUser({
+      email: userData.email,
+      password: userData.password,
+      name: userData.metadata.name,
+      occupation: userData.metadata.occupation,
+      location: userData.metadata.geolocation
+    });
   } catch (error) {
     throw new ResearchException(
       ResearchError.DATABASE_ERROR,
@@ -163,23 +112,9 @@ export async function createUser(userData: any): Promise<void> {
 
 export async function authenticateUser(credentials: any): Promise<any> {
   try {
-    const { data, error } = await supabase
-      .from('AiResearcherAssistant')
-      .select('*')
-      .ilike('e_mail', credentials.email)
-      .eq('PassWord', credentials.password)
-      .single();
-
-    if (error) {
-      console.error('Login error:', error);
-      throw new ResearchException(
-        ResearchError.DATABASE_ERROR,
-        `Authentication failed: ${error.message}`,
-        { error }
-      );
-    }
-
-    if (!data) {
+    const user = await sqliteService.authenticateUser(credentials.email, credentials.password);
+    
+    if (!user) {
       throw new ResearchException(
         ResearchError.DATABASE_ERROR,
         'Invalid email or password'
@@ -187,11 +122,11 @@ export async function authenticateUser(credentials: any): Promise<any> {
     }
 
     return {
-      id: data.id,
-      email: data.e_mail,
-      name: data["User-Name"],
-      occupation: data.Occupation,
-      geolocation: data.Location
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      occupation: user.occupation,
+      geolocation: user.location
     };
   } catch (error) {
     console.error('Authentication error:', error);
