@@ -16,10 +16,11 @@ export default defineConfig(({ command, mode }) => {
   return {
     plugins: [
       react({
-        jsxRuntime: 'automatic',
-        jsxImportSource: '@emotion/react',
         babel: {
-          plugins: ['@emotion/babel-plugin']
+          plugins: [],
+          parserOpts: {
+            plugins: ['jsx']
+          }
         }
       }),
       nodePolyfills({
@@ -50,9 +51,6 @@ export default defineConfig(({ command, mode }) => {
         '@mui/material',
         '@mui/system',
         '@mui/icons-material',
-        '@emotion/react',
-        '@emotion/styled',
-        '@emotion/cache',
         'docx',
         'html-to-pdfmake',
         'pdfmake',
@@ -60,27 +58,29 @@ export default defineConfig(({ command, mode }) => {
       ],
       esbuildOptions: {
         target: 'es2020',
-        format: 'esm',
-        mainFields: ['module', 'main'],
-        conditions: ['module', 'import', 'default'],
-        platform: 'browser'
+        platform: 'browser',
+        supported: {
+          'top-level-await': true
+        }
       }
     },
     build: {
       target: 'es2020',
+      outDir: 'dist',
+      assetsDir: 'assets',
+      sourcemap: !isProd,
+      minify: isProd ? 'terser' : false,
+      terserOptions: {
+        compress: {
+          drop_console: isProd,
+          drop_debugger: isProd
+        }
+      },
       rollupOptions: {
         output: {
-          format: 'es',
           manualChunks: {
             vendor: ['react', 'react-dom', 'react-router-dom'],
-            mui: [
-              '@mui/material',
-              '@mui/system',
-              '@mui/icons-material',
-              '@emotion/react',
-              '@emotion/styled',
-              '@emotion/cache'
-            ],
+            mui: ['@mui/material', '@mui/system', '@mui/icons-material'],
             pdf: ['docx', 'html-to-pdfmake', 'pdfmake'],
             groq: ['groq-sdk']
           }
@@ -88,17 +88,7 @@ export default defineConfig(({ command, mode }) => {
       },
       commonjsOptions: {
         include: [/node_modules/],
-        transformMixedEsModules: true,
-        defaultIsModuleExports: true,
-        requireReturnsDefault: 'auto',
-        extensions: ['.js', '.cjs']
-      },
-      outDir: 'dist',
-      assetsDir: 'assets',
-      assetsInlineLimit: 4096,
-      dynamicImportVarsOptions: {
-        warnOnError: true,
-        exclude: [/node_modules/]
+        transformMixedEsModules: true
       }
     },
     resolve: {
@@ -108,8 +98,7 @@ export default defineConfig(({ command, mode }) => {
         stream: 'stream-browserify',
         buffer: 'buffer'
       },
-      mainFields: ['module', 'main'],
-      extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json', '.vue']
+      extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json']
     },
     server: {
       port: 3000,

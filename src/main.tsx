@@ -3,10 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { Provider } from 'react-redux'
 import { BrowserRouter } from 'react-router-dom'
 import { ThemeProvider } from '@mui/material/styles'
-import { CacheProvider } from '@emotion/react'
-import createCache from '@emotion/cache'
 import CssBaseline from '@mui/material/CssBaseline'
-import { StyledEngineProvider } from '@mui/material/styles'
 
 import App from './App'
 import { store } from './store'
@@ -15,12 +12,6 @@ import ErrorBoundary from './components/ErrorBoundary'
 import './index.css'
 
 console.log('Starting application...')
-
-// Create emotion cache
-const emotionCache = createCache({
-  key: 'css',
-  prepend: true
-});
 
 const init = async () => {
   try {
@@ -38,18 +29,14 @@ const init = async () => {
     const app = (
       <React.StrictMode>
         <ErrorBoundary>
-          <StyledEngineProvider injectFirst>
-            <CacheProvider value={emotionCache}>
-              <Provider store={store}>
-                <BrowserRouter>
-                  <ThemeProvider theme={theme}>
-                    <CssBaseline />
-                    <App />
-                  </ThemeProvider>
-                </BrowserRouter>
-              </Provider>
-            </CacheProvider>
-          </StyledEngineProvider>
+          <Provider store={store}>
+            <BrowserRouter>
+              <ThemeProvider theme={theme}>
+                <CssBaseline />
+                <App />
+              </ThemeProvider>
+            </BrowserRouter>
+          </Provider>
         </ErrorBoundary>
       </React.StrictMode>
     );
