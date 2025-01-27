@@ -17,7 +17,7 @@ export default defineConfig(({ command, mode }) => {
     plugins: [
       react(),
       nodePolyfills({
-        include: ['path', 'crypto', 'stream', 'util'],
+        include: ['path', 'crypto', 'stream', 'util', 'buffer', 'process'],
         globals: {
           Buffer: true,
           global: true,
@@ -37,7 +37,6 @@ export default defineConfig(({ command, mode }) => {
       global: 'globalThis',
     },
     optimizeDeps: {
-      exclude: ['fs'],
       include: [
         'react',
         'react-dom',
@@ -61,7 +60,6 @@ export default defineConfig(({ command, mode }) => {
     build: {
       target: 'es2020',
       rollupOptions: {
-        external: ['fs'],
         output: {
           format: 'es',
           manualChunks: {
@@ -90,7 +88,9 @@ export default defineConfig(({ command, mode }) => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
-        crypto: 'crypto-browserify'
+        crypto: 'crypto-browserify',
+        stream: 'stream-browserify',
+        buffer: 'buffer'
       },
       mainFields: ['module', 'main'],
       extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json', '.vue']
@@ -100,7 +100,7 @@ export default defineConfig(({ command, mode }) => {
       host: true,
       proxy: {
         '/api': {
-          target: env.VITE_GROQ_API_URL,
+          target: 'http://localhost:3000',
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api/, '')
         }
@@ -108,9 +108,8 @@ export default defineConfig(({ command, mode }) => {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Origin, X-Requested-With, Content-Type, Accept, Authorization',
-        'Access-Control-Allow-Credentials': 'true'
+        'Access-Control-Allow-Headers': 'Origin, X-Requested-With, Content-Type, Accept, Authorization'
       }
     }
   }
-})
+});
