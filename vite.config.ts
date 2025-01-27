@@ -16,6 +16,7 @@ export default defineConfig(({ command, mode }) => {
   return {
     plugins: [
       react({
+        jsxRuntime: 'automatic',
         jsxImportSource: '@emotion/react',
         babel: {
           plugins: ['@emotion/babel-plugin']
@@ -47,6 +48,8 @@ export default defineConfig(({ command, mode }) => {
         'react-dom',
         'react-router-dom',
         '@mui/material',
+        '@mui/system',
+        '@mui/icons-material',
         '@emotion/react',
         '@emotion/styled',
         '@emotion/cache',
@@ -70,7 +73,14 @@ export default defineConfig(({ command, mode }) => {
           format: 'es',
           manualChunks: {
             vendor: ['react', 'react-dom', 'react-router-dom'],
-            mui: ['@mui/material', '@emotion/react', '@emotion/styled', '@emotion/cache'],
+            mui: [
+              '@mui/material',
+              '@mui/system',
+              '@mui/icons-material',
+              '@emotion/react',
+              '@emotion/styled',
+              '@emotion/cache'
+            ],
             pdf: ['docx', 'html-to-pdfmake', 'pdfmake'],
             groq: ['groq-sdk']
           }

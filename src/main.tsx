@@ -6,6 +6,7 @@ import { ThemeProvider } from '@mui/material/styles'
 import { CacheProvider } from '@emotion/react'
 import createCache from '@emotion/cache'
 import CssBaseline from '@mui/material/CssBaseline'
+import { StyledEngineProvider } from '@mui/material/styles'
 
 import App from './App'
 import { store } from './store'
@@ -17,12 +18,13 @@ console.log('Starting application...')
 
 // Create emotion cache
 const emotionCache = createCache({
-  key: 'mui-style',
+  key: 'css',
   prepend: true
 });
 
 const init = async () => {
   try {
+    console.log('Initializing application...')
     const rootElement = document.getElementById('root')
     if (!rootElement) {
       console.error('Failed to find the root element')
@@ -32,23 +34,29 @@ const init = async () => {
     console.log('Root element found, creating React root...')
     const root = ReactDOM.createRoot(rootElement)
 
-    console.log('Rendering application...')
-    root.render(
+    console.log('Setting up providers...')
+    const app = (
       <React.StrictMode>
         <ErrorBoundary>
-          <CacheProvider value={emotionCache}>
-            <Provider store={store}>
-              <BrowserRouter>
-                <ThemeProvider theme={theme}>
-                  <CssBaseline />
-                  <App />
-                </ThemeProvider>
-              </BrowserRouter>
-            </Provider>
-          </CacheProvider>
+          <StyledEngineProvider injectFirst>
+            <CacheProvider value={emotionCache}>
+              <Provider store={store}>
+                <BrowserRouter>
+                  <ThemeProvider theme={theme}>
+                    <CssBaseline />
+                    <App />
+                  </ThemeProvider>
+                </BrowserRouter>
+              </Provider>
+            </CacheProvider>
+          </StyledEngineProvider>
         </ErrorBoundary>
       </React.StrictMode>
-    )
+    );
+
+    console.log('Rendering application...')
+    root.render(app)
+    console.log('Application rendered successfully')
   } catch (error) {
     console.error('Failed to initialize application:', error)
   }
