@@ -56,6 +56,7 @@ export default defineConfig(({ command, mode }) => {
         'pdfmake',
         'groq-sdk'
       ],
+      exclude: ['sql.js'],
       esbuildOptions: {
         target: 'es2020',
         platform: 'browser',
@@ -115,6 +116,8 @@ export default defineConfig(({ command, mode }) => {
         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
         'Access-Control-Allow-Headers': 'Origin, X-Requested-With, Content-Type, Accept, Authorization'
       }
-    }
+    },
+    publicDir: 'public',
+    assetsInclude: ['**/*.wasm']
   }
 });

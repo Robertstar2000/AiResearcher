@@ -25,6 +25,7 @@ class SQLiteService {
   private db: Database | null = null;
   private static instance: SQLiteService;
   private initialized = false;
+  private initializationPromise: Promise<void> | null = null;
 
   private constructor() {}
 
@@ -41,11 +42,33 @@ class SQLiteService {
       return;
     }
 
+    // If initialization is already in progress, return the existing promise
+    if (this.initializationPromise) {
+      return this.initializationPromise;
+    }
+
+    this.initializationPromise = this._initialize();
+    return this.initializationPromise;
+  }
+
+  private async _initialize(): Promise<void> {
     try {
       console.log('Initializing SQLite...');
+      const wasmBinaryUrl = '/sql-wasm.wasm';
+
+      // First, try to fetch the WASM file to ensure it exists
+      try {
+        const response = await fetch(wasmBinaryUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to load WASM file: ${response.statusText}`);
+        }
+      } catch (error) {
+        console.error('Error loading WASM file:', error);
+        throw error;
+      }
+
       const SQL = await initSqlJs({
-        // Use CDN for the wasm file
-        locateFile: file => `https://sql.js.org/dist/${file}`
+        locateFile: () => wasmBinaryUrl
       });
       
       // Clear existing database for fresh start
@@ -62,6 +85,7 @@ class SQLiteService {
       console.log('SQLite initialized successfully');
     } catch (error) {
       console.error('Failed to initialize SQLite database:', error);
+      this.initializationPromise = null; // Reset the promise so we can try again
       throw error;
     }
   }
