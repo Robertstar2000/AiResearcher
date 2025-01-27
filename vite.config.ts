@@ -15,7 +15,12 @@ export default defineConfig(({ command, mode }) => {
 
   return {
     plugins: [
-      react(),
+      react({
+        jsxImportSource: '@emotion/react',
+        babel: {
+          plugins: ['@emotion/babel-plugin']
+        }
+      }),
       nodePolyfills({
         include: ['path', 'crypto', 'stream', 'util', 'buffer', 'process'],
         globals: {
@@ -44,6 +49,7 @@ export default defineConfig(({ command, mode }) => {
         '@mui/material',
         '@emotion/react',
         '@emotion/styled',
+        '@emotion/cache',
         'docx',
         'html-to-pdfmake',
         'pdfmake',
@@ -64,7 +70,7 @@ export default defineConfig(({ command, mode }) => {
           format: 'es',
           manualChunks: {
             vendor: ['react', 'react-dom', 'react-router-dom'],
-            mui: ['@mui/material', '@emotion/react', '@emotion/styled'],
+            mui: ['@mui/material', '@emotion/react', '@emotion/styled', '@emotion/cache'],
             pdf: ['docx', 'html-to-pdfmake', 'pdfmake'],
             groq: ['groq-sdk']
           }
