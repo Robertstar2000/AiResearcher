@@ -34,7 +34,9 @@ export const researchSlice = createSlice({
       state.sections = action.payload;
     },
     setTitle: (state, action: PayloadAction<string>) => {
+      console.log('Setting title in reducer:', action.payload);
       state.title = action.payload;
+      console.log('Title set in state:', state.title);
     },
     setError: (state, action: PayloadAction<string | undefined>) => {
       state.error = action.payload;

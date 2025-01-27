@@ -1,20 +1,20 @@
 import { useNavigate } from 'react-router-dom'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Box,
   Typography,
   Container,
   Grid,
   Paper,
-  Button
+  Button,
 } from '@mui/material'
 import {
-  Search as SearchIcon,
-  AutoStories as AutoStoriesIcon,
-  MenuBook as MenuBookIcon,
   FormatQuote as FormatQuoteIcon,
   Person as PersonIcon
 } from '@mui/icons-material'
+import SignUpDialog from '../components/SignUpDialog'
+import SignInDialog from '../components/SignInDialog'
+import { sqliteService } from '../services/sqliteService'
 
 // Import image with type declaration
 const Picture5 = new URL('../assets/Picture5.png', import.meta.url).href
@@ -28,7 +28,7 @@ interface Feature {
 
 const features: Feature[] = [
   {
-    icon: <SearchIcon fontSize="large" />,
+    icon: <FormatQuoteIcon fontSize="large" />,
     title: 'Research Modes',
     description: 'Choose between Basic mode for clear, accessible explanations, or Advanced mode for comprehensive technical analysis.',
     details: [
@@ -39,7 +39,7 @@ const features: Feature[] = [
     ]
   },
   {
-    icon: <AutoStoriesIcon fontSize="large" />,
+    icon: <FormatQuoteIcon fontSize="large" />,
     title: 'Research Types',
     description: 'Select from multiple research formats tailored to your specific needs.',
     details: [
@@ -61,7 +61,7 @@ const features: Feature[] = [
     ]
   },
   {
-    icon: <MenuBookIcon fontSize="large" />,
+    icon: <FormatQuoteIcon fontSize="large" />,
     title: 'Content Generation',
     description: 'AI-powered research content generation with structured, academically rigorous sections.',
     details: [
@@ -75,12 +75,30 @@ const features: Feature[] = [
 
 const LandingPage = () => {
   const navigate = useNavigate()
+  const [signUpOpen, setSignUpOpen] = useState(false)
+  const [signInOpen, setSignInOpen] = useState(false)
+  const [showUserList, setShowUserList] = useState(false);
+  const [users, setUsers] = useState<Array<{
+    name: string;
+    email: string;
+    occupation?: string;
+    location?: string;
+  }>>([]);
+
+  const handleSecretClick = async () => {
+    try {
+      const allUsers = await sqliteService.getAllUsers();
+      setUsers(allUsers);
+      setShowUserList(true);
+    } catch (error) {
+      console.error('Error fetching users:', error);
+    }
+  };
 
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'R' && event.shiftKey) {
-        navigate('/research')
-      }
+    const handleKeyDown = () => {
+      // Remove the keyboard shortcut that bypasses signup
+      return;
     }
 
     window.addEventListener('keydown', handleKeyDown)
@@ -156,28 +174,52 @@ const LandingPage = () => {
           to advance human research capabilities
           for the benefit of humanity on Earth and Mars.
         </Typography>
-        <Button
-          variant="contained"
-          color="secondary"
-          size="large"
-          onClick={() => navigate('/auth')}
-          sx={{ 
-            px: 6,
-            py: 2,
-            mb: 4,
-            fontSize: '1.25rem',
-            fontWeight: 'bold',
-            background: 'linear-gradient(45deg, #FF4081 30%, #FF8E53 90%)',
-            boxShadow: '0 3px 5px 2px rgba(255, 105, 135, .3)',
-            '&:hover': {
-              background: 'linear-gradient(45deg, #FF4081 10%, #FF8E53 70%)',
-              transform: 'scale(1.05)',
-              transition: 'transform 0.2s'
-            }
-          }}
-        >
-          Sign Up For Free
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+          <Button
+            variant="contained"
+            color="secondary"
+            size="large"
+            onClick={() => setSignUpOpen(true)}
+            sx={{ 
+              px: 6,
+              py: 2,
+              mb: 4,
+              fontSize: '1.25rem',
+              fontWeight: 'bold',
+              background: 'linear-gradient(45deg, #FF4081 30%, #FF8E53 90%)',
+              boxShadow: '0 3px 5px 2px rgba(255, 105, 135, .3)',
+              '&:hover': {
+                background: 'linear-gradient(45deg, #FF4081 10%, #FF8E53 70%)',
+                transform: 'scale(1.05)',
+                transition: 'transform 0.2s'
+              }
+            }}
+          >
+            Sign Up For Free
+          </Button>
+          <Button
+            variant="outlined"
+            color="inherit"
+            size="large"
+            onClick={() => setSignInOpen(true)}
+            sx={{ 
+              px: 6,
+              py: 2,
+              mb: 4,
+              fontSize: '1.25rem',
+              fontWeight: 'bold',
+              borderColor: 'white',
+              '&:hover': {
+                borderColor: 'white',
+                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                transform: 'scale(1.05)',
+                transition: 'transform 0.2s'
+              }
+            }}
+          >
+            Sign In
+          </Button>
+        </Box>
       </Box>
 
       {/* Features Grid */}
@@ -258,6 +300,114 @@ const LandingPage = () => {
           </a>
         </Typography>
       </Paper>
+
+      {/* Hidden button */}
+      <button
+        onClick={handleSecretClick}
+        style={{
+          position: 'fixed',
+          bottom: '20px',
+          right: '20px',
+          width: '20px',
+          height: '20px',
+          backgroundColor: 'white',
+          border: '1px solid white',
+          cursor: 'default',
+          padding: 0,
+          margin: 0,
+          outline: 'none',
+          color: '#e0e0e0',
+          fontSize: '14px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}
+      >
+        .
+      </button>
+
+      {/* User list modal */}
+      {showUserList && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.8)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '8px',
+            width: '100%',
+            maxWidth: '600px',
+            maxHeight: '80vh',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              padding: '20px',
+              borderBottom: '1px solid #eee'
+            }}>
+              <h2 style={{ margin: 0 }}>User List</h2>
+              <button 
+                onClick={() => setShowUserList(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '24px',
+                  cursor: 'pointer',
+                  padding: '0 8px'
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <div style={{
+              overflowY: 'auto',
+              padding: '20px',
+              flex: 1
+            }}>
+              {users.map((user, index) => (
+                <div key={index} style={{
+                  padding: '12px',
+                  borderBottom: '1px solid #eee',
+                  fontSize: '14px',
+                  backgroundColor: index % 2 === 0 ? '#f9f9f9' : 'white'
+                }}>
+                  <strong>{user.name}</strong> • {user.email}
+                  {(user.occupation || user.location) && (
+                    <div style={{ color: '#666', marginTop: '4px', fontSize: '13px' }}>
+                      {user.occupation && <span>{user.occupation}</span>}
+                      {user.occupation && user.location && <span> • </span>}
+                      {user.location && <span>{user.location}</span>}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dialogs */}
+      <SignUpDialog 
+        open={signUpOpen}
+        onClose={() => setSignUpOpen(false)}
+      />
+      
+      <SignInDialog
+        open={signInOpen}
+        onClose={() => setSignInOpen(false)}
+      />
     </Container>
   )
 }

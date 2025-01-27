@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { setUser } from '../store/slices/authSlice';
@@ -11,7 +11,9 @@ import {
   Button,
   Box,
   Alert,
+  IconButton,
 } from '@mui/material';
+import { Close as CloseIcon } from '@mui/icons-material';
 
 interface SignUpDialogProps {
   open: boolean;
@@ -30,25 +32,42 @@ export default function SignUpDialog({ open, onClose }: SignUpDialogProps) {
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
-  const handleSignup = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const handleSignup = async () => {
     setError(null);
 
     if (isLoading) return;
 
     try {
-      if (!email || !password || !userName) {
+      // Validate all required fields are properly filled
+      const trimmedEmail = email.trim();
+      const trimmedPassword = password.trim();
+      const trimmedName = userName.trim();
+      const trimmedOccupation = occupation.trim();
+      const trimmedLocation = location.trim();
+
+      if (!trimmedEmail || !trimmedPassword || !trimmedName || !trimmedOccupation || !trimmedLocation) {
         throw new Error('Please fill in all required fields');
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(trimmedEmail)) {
+        throw new Error('Please enter a valid email address');
+      }
+
+      // Validate password length
+      if (trimmedPassword.length < 6) {
+        throw new Error('Password must be at least 6 characters long');
       }
 
       setIsLoading(true);
       const user = await createUser({
-        email,
-        password,
+        email: trimmedEmail,
+        password: trimmedPassword,
         metadata: {
-          name: userName,
-          occupation,
-          geolocation: location
+          name: trimmedName,
+          occupation: trimmedOccupation,
+          geolocation: trimmedLocation
         }
       });
 
@@ -57,7 +76,6 @@ export default function SignUpDialog({ open, onClose }: SignUpDialogProps) {
       navigate('/research');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create account');
-    } finally {
       setIsLoading(false);
     }
   };
@@ -66,79 +84,102 @@ export default function SignUpDialog({ open, onClose }: SignUpDialogProps) {
     <Dialog 
       open={open} 
       onClose={onClose}
-      maxWidth="sm"
+      maxWidth="xs"
       fullWidth
+      PaperProps={{
+        sx: { position: 'relative' }
+      }}
     >
-      <DialogTitle sx={{ textAlign: 'center', pt: 3 }}>
+      <IconButton
+        onClick={onClose}
+        sx={{
+          position: 'absolute',
+          right: 8,
+          top: 8,
+          color: (theme) => theme.palette.grey[500],
+        }}
+      >
+        <CloseIcon />
+      </IconButton>
+      <DialogTitle sx={{ textAlign: 'center', pt: 2, pb: 1, typography: 'h6' }}>
         Sign Up for Free
       </DialogTitle>
-      <DialogContent>
+      <DialogContent sx={{ pb: 2, px: 2 }}>
         {error && (
-          <Alert severity="error" sx={{ mb: 2, width: '100%' }}>
+          <Alert severity="error" sx={{ mb: 1, width: '100%', py: 0 }}>
             {error}
           </Alert>
         )}
-        <Box component="form" onSubmit={handleSignup} sx={{ width: '100%' }}>
+        <Box sx={{ width: '100%' }}>
           <TextField
-            margin="normal"
+            margin="dense"
             required
             fullWidth
             label="Email"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            sx={{ mb: 2 }}
+            onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}
+            size="small"
+            sx={{ mb: 1 }}
           />
           <TextField
-            margin="normal"
+            margin="dense"
             required
             fullWidth
             label="Username"
             value={userName}
             onChange={(e) => setUserName(e.target.value)}
-            sx={{ mb: 2 }}
+            onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}
+            size="small"
+            sx={{ mb: 1 }}
           />
           <TextField
-            margin="normal"
+            margin="dense"
             required
             fullWidth
             label="Password"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            sx={{ mb: 2 }}
+            onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}
+            size="small"
+            sx={{ mb: 1 }}
           />
           <TextField
-            margin="normal"
+            margin="dense"
+            required
             fullWidth
             label="Occupation"
             value={occupation}
             onChange={(e) => setOccupation(e.target.value)}
-            sx={{ mb: 2 }}
+            onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}
+            size="small"
+            sx={{ mb: 1 }}
           />
           <TextField
-            margin="normal"
+            margin="dense"
+            required
             fullWidth
             label="Location"
             value={location}
             onChange={(e) => setLocation(e.target.value)}
-            sx={{ mb: 3 }}
+            onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}
+            size="small"
+            sx={{ mb: 1 }}
           />
           <Button
-            type="submit"
+            onClick={handleSignup}
             fullWidth
             variant="contained"
-            disabled={isLoading}
+            disabled={isLoading || !email.trim() || !password.trim() || !userName.trim() || !occupation.trim() || !location.trim()}
             sx={{
-              mt: 3,
-              mb: 2,
-              background: 'linear-gradient(45deg, #2196F3 30%, #21CBF3 90%)',
-              '&:hover': {
-                background: 'linear-gradient(45deg, #1976D2 30%, #00BCD4 90%)',
-              }
+              mt: 1,
+              mb: 1,
+              py: 1,
             }}
           >
-            {isLoading ? 'Creating Account...' : 'Sign Up'}
+            {isLoading ? 'Creating Account...' : 'Create Account'}
           </Button>
         </Box>
       </DialogContent>

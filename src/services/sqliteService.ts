@@ -1,4 +1,4 @@
-import initSqlJs, { Database } from 'sql.js';
+import initSqlJs, { Database, SqlValue } from 'sql.js';
 
 // Types
 export interface User {
@@ -219,6 +219,66 @@ class SQLiteService {
     }
   }
 
+  public async authenticateUserById(id: string): Promise<User | null> {
+    try {
+      if (!this.db) await this.initialize();
+      if (!this.db) throw new Error('Database not initialized');
+      
+      const result = this.db.exec(
+        'SELECT * FROM users WHERE id = ?',
+        [id]
+      );
+      
+      if (result.length > 0 && result[0].values.length > 0) {
+        const row = result[0].values[0];
+        const getValue = (value: SqlValue | null): string => value ? String(value) : '';
+        const getOptionalValue = (value: SqlValue | null): string | undefined => value ? String(value) : undefined;
+        
+        return {
+          id: getValue(row[0]),
+          email: getValue(row[1]),
+          password: getValue(row[2]),
+          name: getValue(row[3]),
+          occupation: getOptionalValue(row[4]),
+          location: getOptionalValue(row[5]),
+          created_at: getValue(row[6])
+        };
+      }
+      return null;
+    } catch (error) {
+      console.error('Error authenticating user by ID:', error);
+      return null;
+    }
+  }
+
+  public async getAllUsers(): Promise<Omit<User, 'password'>[]> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+    
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = this.db.exec(
+      'SELECT id, email, name, occupation, location, created_at FROM users ORDER BY created_at DESC'
+    );
+
+    if (!result.length) {
+      return [];
+    }
+
+    const getValue = (value: SqlValue | null): string => value ? String(value) : '';
+    const getOptionalValue = (value: SqlValue | null): string | undefined => value ? String(value) : undefined;
+
+    return result[0].values.map(row => ({
+      id: getValue(row[0]),
+      email: getValue(row[1]),
+      name: getValue(row[2]),
+      occupation: getOptionalValue(row[3]),
+      location: getOptionalValue(row[4]),
+      created_at: getValue(row[5])
+    }));
+  }
+
   // Research operations
   public async saveResearchEntry(data: Omit<ResearchEntry, 'id' | 'created_at' | 'updated_at'>): Promise<{ id: string }> {
     if (!this.initialized) {
@@ -246,22 +306,25 @@ class SQLiteService {
     if (!this.db) throw new Error('Database not initialized');
 
     const result = this.db.exec(
-      'SELECT id, user_id, title, content, ref_list, created_at, updated_at FROM research WHERE user_id = ?',
+      'SELECT * FROM research WHERE user_id = ? ORDER BY created_at DESC',
       [userId]
     );
 
-    if (result.length === 0) {
+    if (!result.length) {
       return [];
     }
 
+    const getValue = (value: SqlValue | null): string => value ? String(value) : '';
+    const getJsonValue = (value: SqlValue | null): any => value ? JSON.parse(String(value)) : null;
+
     return result[0].values.map(row => ({
-      id: String(row[0]),
-      user_id: String(row[1]),
-      title: String(row[2]),
-      content: JSON.parse(String(row[3])),
-      references: JSON.parse(String(row[4])),
-      created_at: String(row[5]),
-      updated_at: String(row[6])
+      id: getValue(row[0]),
+      user_id: getValue(row[1]),
+      title: getValue(row[2]),
+      content: getJsonValue(row[3]),
+      references: getJsonValue(row[4]),
+      created_at: getValue(row[5]),
+      updated_at: getValue(row[6])
     }));
   }
 

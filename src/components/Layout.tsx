@@ -5,12 +5,15 @@ import { useSelector } from 'react-redux'
 import { RootState } from '../store'
 import { signOut } from '../services/authService'
 import { AuthUser } from '../store/slices/authSlice'
+import { useState } from 'react'
+import SignInDialog from './SignInDialog'
 
 const Layout = () => {
   const location = useLocation()
   const navigate = useNavigate()
   const isAuthenticated = useSelector((state: RootState) => state.auth.isAuthenticated)
   const user = useSelector((state: RootState) => state.auth.user) as AuthUser | null
+  const [signInOpen, setSignInOpen] = useState(false)
 
   const handleLogout = async () => {
     try {
@@ -35,7 +38,23 @@ const Layout = () => {
             <MenuIcon />
           </IconButton>
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            AI Researcher
+            <Box component="span" sx={{ fontSize: '1.8rem', fontWeight: 'bold' }}>
+              AI Researcher
+            </Box>
+            <Typography 
+              variant="subtitle1" 
+              component="span" 
+              sx={{ 
+                ml: 2,
+                color: 'white',
+                opacity: 0.9,
+                fontStyle: 'italic',
+                display: { xs: 'none', sm: 'inline' },
+                fontSize: '1.4rem'
+              }}
+            >
+              AI Powered Virtual Research Assistant
+            </Typography>
           </Typography>
           {isAuthenticated ? (
             <>
@@ -48,16 +67,31 @@ const Layout = () => {
             </>
           ) : (
             location.pathname === '/' && (
-              <Button color="inherit" onClick={() => navigate('/auth')}>
+              <Button color="inherit" onClick={() => setSignInOpen(true)}>
                 Login
               </Button>
             )
           )}
         </Toolbar>
       </AppBar>
-      <Container component="main" sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
-        <Outlet />
-      </Container>
+      <Box
+        component="main"
+        sx={{
+          flexGrow: 1,
+          p: 3,
+          display: 'flex',
+          justifyContent: 'center'
+        }}
+      >
+        <Container maxWidth="lg">
+          <Outlet />
+        </Container>
+      </Box>
+
+      <SignInDialog
+        open={signInOpen}
+        onClose={() => setSignInOpen(false)}
+      />
     </Box>
   )
 }

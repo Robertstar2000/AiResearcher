@@ -1,76 +1,83 @@
-import React, { useState } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
+import { useState } from 'react';
+import { useSelector, useDispatch } from 'react-redux';
 import {
   Box,
   Button,
-  Typography,
-  Drawer,
+  FormControl,
+  InputLabel,
+  LinearProgress,
   List,
   ListItem,
   ListItemText,
-  FormControl,
-  InputLabel,
-  Select,
   MenuItem,
-  TextField,
-  Grid,
   Paper,
-  LinearProgress,
+  Select,
+  SelectChangeEvent,
+  TextField,
+  Typography,
   Divider,
-  SelectChangeEvent
 } from '@mui/material';
-import { styled } from '@mui/material/styles';
-import DownloadIcon from '@mui/icons-material/Download';
-import { ResearchMode, ResearchType, researchApi } from '../services/api';
 import { RootState } from '../store/store';
-import { setError, setMode, setResearchTarget, setSections, setTitle, setType } from '../store/slices/researchSlice';
-import { ResearchSection } from '../types/research';
+import { setMode, setResearchTarget, setTitle, setType, setSections, setError } from '../store/slices/researchSlice';
+import { generateOutline, parseOutline } from '../services/researchService';
 import { downloadMarkdown } from '../utils/download';
 import { downloadDocx } from '../utils/downloadDocx';
+import type { ResearchSection } from '../types/research';
+import { ResearchMode, ResearchType, researchApi } from '../services/api';
 
-const drawerWidth = 240;
-
-const Main = styled('main')<{}>(() => ({
-  flexGrow: 1,
-  padding: 0,
-  marginLeft: `${drawerWidth}px`,
-  width: `calc(100vw - ${drawerWidth}px)`,
-  boxSizing: 'border-box',
-  height: '100vh',
-  overflowY: 'auto',
-  backgroundColor: '#f5f5f5'
-}));
-
-const ResearchPage: React.FC = () => {
+const ResearchPage = () => {
   const dispatch = useDispatch();
   const research = useSelector((state: RootState) => state.research);
   const [isGeneratingTitle, setIsGeneratingTitle] = useState(false);
   const [isGeneratingOutline, setIsGeneratingOutline] = useState(false);
   const [isGeneratingDocument, setIsGeneratingDocument] = useState(false);
-  const [progressState, setProgressState] = useState({ progress: 0, message: '' });
+  const [progressState, setProgressState] = useState<{
+    progress: number;
+    message: string;
+  }>({
+    progress: 0,
+    message: '',
+  });
 
-  const handleModeChange = (event: SelectChangeEvent<ResearchMode>) => {
+  const handleModeChange = (event: SelectChangeEvent) => {
     dispatch(setMode(event.target.value as ResearchMode));
   };
 
-  const handleTypeChange = (event: SelectChangeEvent<ResearchType>) => {
+  const handleTypeChange = (event: SelectChangeEvent) => {
     dispatch(setType(event.target.value as ResearchType));
   };
 
-  const handleTitleGeneration = async () => {
-    if (!research.researchTarget) return;
+  const handleResearchTargetChange = (event: { target: { value: string } }) => {
+    dispatch(setResearchTarget(event.target.value));
+  };
 
+  const handleTitleChange = (event: { target: { value: string } }) => {
+    dispatch(setTitle(event.target.value));
+  };
+
+  const handleGenerateTitle = async () => {
+    if (!research.researchTarget) {
+      dispatch(setError('Please enter research target text first'));
+      return;
+    }
+
+    console.log('Starting title generation for:', research.researchTarget);
     setIsGeneratingTitle(true);
     setProgressState({
       progress: 0,
-      message: 'Generating title...',
+      message: 'Generating academic title...',
     });
 
     try {
+      console.log('Calling researchApi.generateTitle...');
       const title = await researchApi.generateTitle(research.researchTarget);
-      // Remove quotes from generated title
-      const cleanTitle = title.replace(/^["']|["']$/g, '');
-      dispatch(setTitle(cleanTitle));
+      console.log('Generated title:', title);
+      
+      // Store the title in local variable before dispatching
+      const generatedTitle = title.trim();
+      console.log('About to dispatch title:', generatedTitle);
+      dispatch(setTitle(generatedTitle));
+      console.log('Title dispatched:', generatedTitle);
 
       setProgressState({
         progress: 100,
@@ -84,9 +91,9 @@ const ResearchPage: React.FC = () => {
     }
   };
 
-  const handleOutlineGeneration = async () => {
-    if (!research.title) {
-      dispatch(setError('Please generate a title first'));
+  const handleGenerateOutline = async () => {
+    if (!research.researchTarget) {
+      dispatch(setError('Please enter research target text first'));
       return;
     }
 
@@ -97,84 +104,12 @@ const ResearchPage: React.FC = () => {
     });
 
     try {
-      console.log('Generating outline with:', {
-        title: research.title,
-        target: research.researchTarget,
-        mode: research.mode,
-        type: research.type
-      });
-
-      const outlineText = await researchApi.generateOutline(
-        research.title,
+      const outlineText = await generateOutline(
         research.researchTarget,
-        research.mode as ResearchMode,
-        research.type as ResearchType
+        research.mode,
+        research.type
       );
-
-      console.log('Generated outline text:', outlineText);
-
-      // Parse outline into sections
-      const sections: ResearchSection[] = [];
-      let currentMainSection: ResearchSection | null = null;
-
-      const lines = outlineText.split('\n').map(line => line.trim()).filter(line => line);
-
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        console.log('Processing line:', line);
-
-        // Check for main section (e.g., "1. Title")
-        const mainSectionMatch = line.match(/^(\d+)\.\s+(.+?)(?:\s*\[|$)/);
-        if (mainSectionMatch) {
-          if (currentMainSection) {
-            sections.push(currentMainSection);
-          }
-          currentMainSection = {
-            number: mainSectionMatch[1],
-            title: mainSectionMatch[2].trim(),
-            content: '',
-            subsections: []
-          };
-
-          // Look ahead for description in next line
-          if (i + 1 < lines.length && lines[i + 1].startsWith('[')) {
-            currentMainSection.content = lines[i + 1].slice(1, -1).trim();
-            i++; // Skip next line since we processed it
-          }
-          continue;
-        }
-
-        // Check for subsection (e.g., "1.1 Title")
-        const subSectionMatch = line.match(/^(\d+\.\d+)\s+(.+?)(?:\s*\[|$)/);
-        if (subSectionMatch && currentMainSection) {
-          const subsection = {
-            number: subSectionMatch[1],
-            title: subSectionMatch[2].trim(),
-            content: ''
-          };
-
-          // Look ahead for description in next line
-          if (i + 1 < lines.length && lines[i + 1].startsWith('[')) {
-            subsection.content = lines[i + 1].slice(1, -1).trim();
-            i++; // Skip next line since we processed it
-          }
-
-          currentMainSection.subsections?.push(subsection);
-          continue;
-        }
-      }
-
-      // Add the last section
-      if (currentMainSection) {
-        sections.push(currentMainSection);
-      }
-
-      console.log('Final parsed sections:', sections);
-
-      if (sections.length === 0) {
-        throw new Error('No sections were parsed from the outline');
-      }
-
+      const sections = parseOutline(outlineText);
       dispatch(setSections(sections));
 
       setProgressState({
@@ -189,123 +124,103 @@ const ResearchPage: React.FC = () => {
     }
   };
 
-  const handleDocumentGeneration = async () => {
+  const handleGenerateDocument = async () => {
     if (!research.sections || research.sections.length === 0) {
       dispatch(setError('Please generate an outline first'));
       return;
     }
 
     setIsGeneratingDocument(true);
-    setProgressState({
-      progress: 0,
-      message: 'Starting document generation...',
-    });
+    const maxRetries = 3;
+    const totalSections = research.sections.length;
+    let completedSections = 0;
 
-    try {
-      const totalSections = research.sections.length;
-      let completedSections = 0;
+    const updatedSections = [...research.sections];
+    const sectionDelay = 2000; // 2 second delay between sections
 
-      // Create a deep copy of sections to modify
-      const updatedSections = research.sections.map(section => ({
-        ...section,
-        subsections: section.subsections?.map(sub => ({ ...sub }))
-      }));
+    for (let i = 0; i < updatedSections.length; i++) {
+      let sectionSuccess = false;
+      let retryCount = 0;
+      const section = updatedSections[i];
 
-      // Generate content for each section
-      for (let i = 0; i < updatedSections.length; i++) {
-        let sectionSuccess = false;
-        let retryCount = 0;
-        const maxRetries = 8;
-        const initialDelay = 1000;
+      // Add delay between sections (except for the first one)
+      if (i > 0) {
+        await new Promise(resolve => setTimeout(resolve, sectionDelay));
+      }
 
-        while (!sectionSuccess && retryCount < maxRetries) {
-          try {
-            const section = updatedSections[i];
-            setProgressState({
-              progress: (completedSections / totalSections) * 100,
-              message: `Generating content for section ${section.number}: ${section.title}${retryCount > 0 ? ` (Retry ${retryCount}/${maxRetries})` : ''}...`,
-            });
+      while (!sectionSuccess && retryCount < maxRetries) {
+        try {
+          setProgressState({
+            progress: (completedSections / totalSections) * 100,
+            message: `Generating content for section ${section.number}: ${section.title}${retryCount > 0 ? ` (Retry ${retryCount}/${maxRetries})` : ''}...`,
+          });
 
-            // Generate content for main section
-            const sectionContent = await researchApi.generateSectionBatch(
-              [{
-                title: section.title,
-                content: section.content || '',
-                subsections: section.subsections?.map(sub => ({
-                  title: sub.title,
-                  content: sub.content || ''
-                }))
-              }],
+          // Generate content for this section using batch generation with size 1
+          const [sectionWithContent] = await researchApi.generateSectionBatch(
+            [section],
+            research.researchTarget,
+            research.mode as ResearchMode,
+            research.type as ResearchType
+          );
+
+          if (!sectionWithContent || !sectionWithContent.content) {
+            throw new Error('No content generated for section');
+          }
+
+          updatedSections[i] = {
+            ...updatedSections[i],
+            content: sectionWithContent.content
+          };
+
+          // Add delay before generating subsections
+          if (section.subsections && section.subsections.length > 0) {
+            await new Promise(resolve => setTimeout(resolve, sectionDelay));
+            
+            // Generate content for subsections using batch generation
+            const subsectionResults = await researchApi.generateSectionBatch(
+              section.subsections,
               research.researchTarget,
               research.mode as ResearchMode,
               research.type as ResearchType
             );
 
-            if (!sectionContent?.[0]?.content) {
-              throw new Error(`Failed to generate content for section ${section.number}`);
+            if (!subsectionResults || !Array.isArray(subsectionResults)) {
+              throw new Error('Invalid subsection results');
             }
 
-            // Update the section with generated content
-            updatedSections[i] = {
-              ...updatedSections[i],
-              content: sectionContent[0].content
-            };
-
-            // Generate content for subsections if they exist
-            if (section.subsections && section.subsections.length > 0) {
-              const subsectionContent = await researchApi.generateSectionBatch(
-                section.subsections.map(sub => ({
-                  title: sub.title,
-                  content: sub.content || ''
-                })),
-                research.researchTarget,
-                research.mode as ResearchMode,
-                research.type as ResearchType
-              );
-
-              if (!subsectionContent?.length) {
-                throw new Error(`Failed to generate content for subsections of section ${section.number}`);
-              }
-
-              updatedSections[i].subsections = section.subsections.map((subsection, idx) => ({
-                ...subsection,
-                content: subsectionContent[idx]?.content || subsection.content || ''
-              }));
-            }
-
-            sectionSuccess = true;
-            completedSections++;
-            
-            // Update Redux state after each section is completed
-            dispatch(setSections(updatedSections.map(s => ({ ...s }))));
-
-          } catch (sectionError) {
-            console.error(`Error generating section ${i + 1} (Attempt ${retryCount + 1}/${maxRetries}):`, sectionError);
-            retryCount++;
-
-            if (retryCount < maxRetries) {
-              const delayTime = initialDelay * Math.pow(2, retryCount - 1);
-              dispatch(setError(`Retrying section ${i + 1} in ${delayTime / 1000} seconds...`));
-              await new Promise(resolve => setTimeout(resolve, delayTime));
-            } else {
-              dispatch(setError(`Failed to generate section ${i + 1} after ${maxRetries} attempts. Continuing with remaining sections.`));
-              break;
-            }
+            updatedSections[i].subsections = section.subsections.map((subsection, idx) => ({
+              ...subsection,
+              content: subsectionResults[idx]?.content || ''
+            }));
           }
+
+          sectionSuccess = true;
+          completedSections++;
+          dispatch(setSections([...updatedSections]));
+
+        } catch (error) {
+          console.error(`Error generating section ${section.number}:`, error);
+          retryCount++;
+          
+          if (retryCount >= maxRetries) {
+            dispatch(setError(`Failed to generate content for section ${section.number} after ${maxRetries} attempts`));
+            setIsGeneratingDocument(false);
+            return;
+          }
+          
+          // Start at 5 seconds and double each retry, max 700 seconds
+          const baseDelay = 5000; // 5 seconds
+          const retryDelay = Math.min(baseDelay * Math.pow(2, retryCount), 700000); // max 700 seconds
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
         }
       }
-
-      setProgressState({
-        progress: 100,
-        message: 'Document generation completed!',
-      });
-
-    } catch (error) {
-      console.error('Error generating document:', error);
-      dispatch(setError('Failed to generate document. Please try again.'));
-    } finally {
-      setIsGeneratingDocument(false);
     }
+
+    setProgressState({
+      progress: 100,
+      message: 'Document generated successfully!',
+    });
+    setIsGeneratingDocument(false);
   };
 
   const handleDownloadMarkdown = () => {
@@ -313,371 +228,322 @@ const ResearchPage: React.FC = () => {
       dispatch(setError('No content available to download'));
       return;
     }
-    downloadMarkdown(research.title, research.sections);
+
+    try {
+      downloadMarkdown(research.title, research.sections);
+    } catch (error) {
+      console.error('Error downloading markdown:', error);
+      dispatch(setError('Failed to download markdown. Please try again.'));
+    }
   };
 
   const handleDownloadDocx = async () => {
-    console.log('Download .docx clicked, state:', { 
-      title: research.title, 
-      sectionsCount: research.sections?.length,
-      sections: research.sections 
-    });
-
     if (!research.title || !research.sections) {
       dispatch(setError('No content available to download'));
       return;
     }
 
     try {
-      console.log('Starting docx download...');
       await downloadDocx(research.title, research.sections);
-      console.log('Download completed');
     } catch (error) {
       console.error('Error downloading document:', error);
       dispatch(setError('Failed to download document. Please try again.'));
     }
   };
 
-  const handleTitleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    // Remove quotes from start and end of title
-    const cleanTitle = event.target.value.replace(/^["']|["']$/g, '');
-    dispatch(setTitle(cleanTitle));
-  };
-
   return (
-    <Box sx={{ 
-      display: 'flex', 
-      minHeight: '100vh',
-      overflow: 'hidden', 
-      width: '100vw',
-      position: 'relative'
-    }}>
-      <Drawer
-        variant="permanent"
-        sx={{
-          width: drawerWidth,
-          flexShrink: 0,
-          position: 'absolute',
-          height: '100%',
-          '& .MuiDrawer-paper': {
-            width: drawerWidth,
-            boxSizing: 'border-box',
-            position: 'relative',
-            height: '100%',
-            overflowY: 'auto',
-            borderRight: '1px solid rgba(0, 0, 0, 0.12)'
-          },
-        }}
-      >
-        <Box sx={{ overflow: 'auto', p: 2, pt: 1 }}>
-          <Typography variant="h5" sx={{ mb: 2 }}>
-            AI Research Assistant
-          </Typography>
-          <Typography variant="body2" color="warning.main" sx={{ mb: 2 }}>
-            ⚠️ Please Note: Research generation may take a long time due to multiple AI completions required for comprehensive content.
-          </Typography>
+    <Box sx={{ display: 'flex', height: '100%' }}>
+      <Box sx={{ width: '250px', flexShrink: 0, p: 2 }}>
+        <Typography variant="h6" sx={{ mb: 2 }}>AI Research Assistant</Typography>
+        <Typography variant="caption" color="warning.main" sx={{ display: 'block', mb: 2 }}>
+          ⚠️ Please Note: Research generation may take a long time due to multiple AI completions required for comprehensive content.
+        </Typography>
+        
+        <Typography variant="subtitle1" sx={{ mt: 3, mb: 1, fontWeight: 'bold' }}>Getting Started</Typography>
+        
+        <Typography variant="subtitle2" sx={{ mt: 2, fontWeight: 'bold' }}>1. Account Setup & Security</Typography>
+        <Typography variant="body2" sx={{ ml: 1 }}>
+          • Creating an Account:<br/>
+          - Click "Sign Up" in the top navigation<br/>
+          - Enter your email address<br/>
+          - Create a strong password<br/>
+          - Verify your email
+        </Typography>
 
-          <Typography variant="h6" gutterBottom>
-            Research Mode
-          </Typography>
-          <List>
-            <ListItem>
-              <ListItemText
-                primary="Basic Mode (5-7 pages)"
-                secondary="Quick overview of topics, key points and main arguments. Suitable for brief reports."
-              />
-            </ListItem>
-            <ListItem>
-              <ListItemText
-                primary="Advanced Mode (10-15 pages)"
-                secondary="Detailed analysis, supporting evidence, citations and references. Balanced for most academic needs."
-              />
-            </ListItem>
-            <ListItem>
-              <ListItemText
-                primary="Expert Mode (20+ pages)"
-                secondary="Comprehensive coverage, in-depth analysis, extensive references. Suitable for thesis/dissertation."
-              />
-            </ListItem>
-          </List>
+        <Typography variant="subtitle2" sx={{ mt: 2, fontWeight: 'bold' }}>2. Research Settings</Typography>
+        <Typography variant="body2" sx={{ ml: 1 }}>
+          • Research Mode determines depth & length<br/>
+          • Research Type determines approach<br/>
+          • Configure both before starting
+        </Typography>
 
-          <Typography variant="h6" sx={{ mt: 3 }} gutterBottom>
-            Research Type
-          </Typography>
-          <List>
-            <ListItem>
-              <ListItemText
-                primary="General Research"
-                secondary="Balanced mix of analysis, covers multiple perspectives, includes background information."
-              />
-            </ListItem>
-            <ListItem>
-              <ListItemText
-                primary="Literature Review"
-                secondary="Focus on existing research, analysis of current literature, comparison of different studies."
-              />
-            </ListItem>
-            <ListItem>
-              <ListItemText
-                primary="Experimental Research"
-                secondary="Methodology-focused, data analysis emphasis, results and discussion."
-              />
-            </ListItem>
-          </List>
+        <Typography variant="subtitle2" sx={{ mt: 2, fontWeight: 'bold' }}>3. Research Process</Typography>
+        <Typography variant="body2" sx={{ ml: 1 }}>
+          1. Enter research target<br/>
+          2. Generate title<br/>
+          3. Generate outline<br/>
+          4. Generate document<br/>
+          5. Download in preferred format
+        </Typography>
 
-          <Typography variant="h6" sx={{ mt: 3 }} gutterBottom>
-            Generation Process
-          </Typography>
-          <List>
-            <ListItem>
-              <ListItemText
-                primary="1. Generate Target"
-                secondary="Refines your research focus, creates structured approach, identifies key areas."
-              />
-            </ListItem>
-            <ListItem>
-              <ListItemText
-                primary="2. Generate Outline"
-                secondary="Creates detailed structure, organizes main sections, adds relevant subsections."
-              />
-            </ListItem>
-            <ListItem>
-              <ListItemText
-                primary="3. Generate Research"
-                secondary="Processes section by section, creates detailed content, adds citations and references."
-              />
-            </ListItem>
-          </List>
+        <Typography variant="subtitle2" sx={{ mt: 2, fontWeight: 'bold' }}>4. Tips</Typography>
+        <Typography variant="body2" sx={{ ml: 1 }}>
+          • Be patient during generation<br/>
+          • Don't refresh the page<br/>
+          • Save work regularly<br/>
+          • Export to Markdown for backup
+        </Typography>
 
-          <Typography variant="h6" sx={{ mt: 3 }} gutterBottom>
-            Best Practices
-          </Typography>
-          <List>
-            <ListItem>
-              <ListItemText
-                primary="During Generation"
-                secondary="Be patient with AI processing, watch progress bar for status, don't refresh the page."
-              />
-            </ListItem>
-            <ListItem>
-              <ListItemText
-                primary="Export Options"
-                secondary="Save work frequently using Markdown export, review each step's output."
-              />
-            </ListItem>
-          </List>
-        </Box>
-      </Drawer>
+        <Typography variant="subtitle2" sx={{ mt: 2, fontWeight: 'bold' }}>5. Expected Output</Typography>
+        <Typography variant="body2" sx={{ ml: 1 }}>
+          • Title page and abstract<br/>
+          • Table of contents<br/>
+          • Numbered sections<br/>
+          • References and appendices
+        </Typography>
 
-      <Main>
-        <Box sx={{ 
-          width: '100%', 
-          p: 2,
-          pt: 1,
-          '& .MuiPaper-root': {
-            mb: 2,
-            '&:last-child': {
-              mb: 0
-            }
-          }
-        }}>
-          <Paper elevation={3} sx={{ width: '100%', boxSizing: 'border-box' }}>
-            <Box sx={{ p: 2 }}>
-              <Typography variant="h4" sx={{ mb: 2 }}>
-                Research Settings
-              </Typography>
-              <Grid container spacing={2}>
-                <Grid item xs={12} md={6}>
-                  <FormControl fullWidth>
-                    <InputLabel>Research Mode</InputLabel>
-                    <Select value={research.mode} onChange={handleModeChange}>
-                      <MenuItem value={ResearchMode.Basic}>Basic</MenuItem>
-                      <MenuItem value={ResearchMode.Advanced}>Advanced</MenuItem>
-                      <MenuItem value={ResearchMode.Expert}>Expert</MenuItem>
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid item xs={12} md={6}>
-                  <FormControl fullWidth>
-                    <InputLabel>Research Type</InputLabel>
-                    <Select value={research.type} onChange={handleTypeChange}>
-                      <MenuItem value={ResearchType.General}>General Research</MenuItem>
-                      <MenuItem value={ResearchType.Literature}>Literature Review</MenuItem>
-                      <MenuItem value={ResearchType.Experiment}>Experimental Research</MenuItem>
-                    </Select>
-                  </FormControl>
-                </Grid>
-              </Grid>
-            </Box>
-          </Paper>
+        <Typography variant="subtitle2" sx={{ mt: 2, fontWeight: 'bold' }}>6. Citations and References</Typography>
+        <Typography variant="body2" sx={{ ml: 1 }}>
+          • In-text citations<br/>
+          • Alphabetized references<br/>
+          • DOI and URL links<br/>
+          • Multiple source formats
+        </Typography>
 
-          <Paper elevation={3} sx={{ width: '100%', boxSizing: 'border-box' }}>
-            <Box sx={{ p: 2 }}>
-              <Typography variant="h4" sx={{ mb: 2 }}>
-                Document Generation
-              </Typography>
+        <Typography variant="subtitle2" sx={{ mt: 2, fontWeight: 'bold' }}>7. Strengths and Limitations</Typography>
+        <Typography variant="body2" sx={{ ml: 1 }}>
+          • Fast document generation<br/>
+          • Consistent formatting<br/>
+          • Verify citations manually<br/>
+          • Use as research aid
+        </Typography>
+      </Box>
+      <Box sx={{ 
+        flexGrow: 1, 
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center'
+      }}>
+        <Box sx={{ width: '100%', maxWidth: 'md' }}>
+          <Box sx={{ mb: 3 }}>
+            <TextField
+              fullWidth
+              multiline
+              rows={3}
+              label="Research Target"
+              value={research.researchTarget}
+              onChange={handleResearchTargetChange}
+              placeholder="Enter your research topic or question here..."
+              size="small"
+              sx={{
+                '& .MuiInputBase-input': {
+                  fontSize: '0.875rem',
+                  py: 0.5
+                },
+                '& .MuiInputLabel-root': {
+                  fontSize: '0.875rem'
+                }
+              }}
+            />
+          </Box>
 
-              <TextField
-                fullWidth
-                label="Research Target"
-                value={research.researchTarget}
-                onChange={(e) => dispatch(setResearchTarget(e.target.value))}
-                multiline
-                rows={3}
-                sx={{ mb: 2 }}
-              />
+          <Box sx={{ mt: 3 }}>
+            <TextField
+              fullWidth
+              multiline
+              rows={3}
+              label="Research Title"
+              value={research.title || ''}
+              onChange={handleTitleChange}
+              variant="outlined"
+              disabled={isGeneratingTitle}
+              placeholder="Your research title will appear here..."
+              size="small"
+              sx={{
+                '& .MuiInputBase-input': {
+                  color: '#1976d2',
+                  fontWeight: 'bold',
+                  fontSize: '0.875rem',
+                  py: 0.5
+                },
+                '& .MuiInputLabel-root': {
+                  fontSize: '0.875rem'
+                }
+              }}
+            />
+          </Box>
 
-              <Button
-                fullWidth
-                variant="contained"
-                color="primary"
-                onClick={handleTitleGeneration}
-                disabled={!research.researchTarget || isGeneratingTitle}
-                sx={{ mb: 2 }}
-              >
-                {isGeneratingTitle ? 'Generating Title...' : 'Generate Title'}
-              </Button>
-
-              {research.title && (
-                <Box sx={{ mb: 3, p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
-                  <Typography variant="h6" sx={{ mb: 1 }}>
-                    Generated Title:
-                  </Typography>
-                  <TextField
-                    fullWidth
-                    value={research.title}
-                    onChange={handleTitleChange}
-                    variant="outlined"
-                    size="small"
-                    sx={{ 
-                      '& .MuiOutlinedInput-root': {
-                        backgroundColor: 'white'
-                      }
-                    }}
-                  />
-                </Box>
-              )}
-
-              {research.title && (
-                <Button
-                  fullWidth
-                  variant="contained"
-                  color="primary"
-                  onClick={handleOutlineGeneration}
-                  disabled={isGeneratingOutline || !research.researchTarget}
-                  sx={{ mb: 2 }}
-                >
-                  {isGeneratingOutline ? 'Generating Outline...' : 'Generate Outline'}
-                </Button>
-              )}
-
-              {research.sections && research.sections.length > 0 && (
-                <Box sx={{ mb: 3, p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
-                  <Typography variant="h6" sx={{ mb: 2 }}>
-                    Generated Outline:
-                  </Typography>
-                  <List sx={{ 
-                    width: '100%',
-                    bgcolor: 'background.paper',
-                    '& .MuiListItem-root': { 
-                      flexDirection: 'column',
-                      alignItems: 'flex-start',
-                      py: 1
+          <Box sx={{ display: 'flex', gap: 2, mt: 3 }}>
+            <Box sx={{ flex: 1 }}>
+              <FormControl fullWidth size="small">
+                <InputLabel sx={{ 
+                  fontSize: '0.875rem',
+                  '&.MuiInputLabel-shrink': {
+                    transform: 'translate(14px, -18px) scale(0.75)'
+                  }
+                }}>Research Mode</InputLabel>
+                <Select 
+                  value={research.mode} 
+                  onChange={handleModeChange}
+                  sx={{ 
+                    '& .MuiSelect-select': { 
+                      fontSize: '0.875rem',
+                      py: 0.5
                     }
-                  }}>
-                    {research.sections.map((section) => (
-                      <React.Fragment key={section.number}>
-                        <ListItem>
-                          <ListItemText
-                            primary={
-                              <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 0.5 }}>
-                                {section.number}. {section.title}
-                              </Typography>
-                            }
-                            secondary={
-                              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                                {section.content}
-                              </Typography>
-                            }
-                          />
-                          {section.subsections && section.subsections.length > 0 && (
-                            <List sx={{ 
-                              width: '100%',
-                              pl: 3,
-                              '& .MuiListItem-root': {
-                                py: 0.5
-                              }
-                            }}>
-                              {section.subsections.map((subsection) => (
-                                <ListItem key={subsection.number}>
-                                  <ListItemText
-                                    primary={
-                                      <Typography variant="body2" sx={{ fontWeight: 'medium', mb: 0.5 }}>
-                                        {subsection.number} {subsection.title}
-                                      </Typography>
-                                    }
-                                    secondary={
-                                      <Typography variant="body2" color="text.secondary">
-                                        {subsection.content}
-                                      </Typography>
-                                    }
-                                  />
-                                </ListItem>
-                              ))}
-                            </List>
-                          )}
-                        </ListItem>
-                        <Divider sx={{ my: 1 }} />
-                      </React.Fragment>
-                    ))}
-                  </List>
-                </Box>
-              )}
-
-              {(isGeneratingTitle || isGeneratingOutline || isGeneratingDocument) && (
-                <Box sx={{ width: '100%', mb: 2 }}>
-                  <LinearProgress variant="determinate" value={progressState.progress} />
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                    {progressState.message}
-                  </Typography>
-                </Box>
-              )}
-
-              {research.sections && research.sections.length > 0 && (
-                <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    onClick={handleDocumentGeneration}
-                    disabled={isGeneratingDocument}
-                    fullWidth
-                  >
-                    {isGeneratingDocument ? 'Generating...' : 'Generate Document'}
-                  </Button>
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    onClick={handleDownloadMarkdown}
-                    disabled={!research.sections || research.sections.length === 0}
-                    startIcon={<DownloadIcon />}
-                  >
-                    Download Markup
-                  </Button>
-                  <Button
-                    variant="contained"
-                    color="secondary"
-                    onClick={handleDownloadDocx}
-                    disabled={!research.sections || research.sections.length === 0}
-                    startIcon={<DownloadIcon />}
-                  >
-                    Download .docx
-                  </Button>
-                </Box>
-              )}
+                  }}
+                >
+                  <MenuItem value="basic" sx={{ fontSize: '0.875rem' }}>Basic</MenuItem>
+                  <MenuItem value="advanced" sx={{ fontSize: '0.875rem' }}>Advanced</MenuItem>
+                  <MenuItem value="expert" sx={{ fontSize: '0.875rem' }}>Expert</MenuItem>
+                </Select>
+              </FormControl>
             </Box>
-          </Paper>
+
+            <Box sx={{ flex: 1 }}>
+              <FormControl fullWidth size="small">
+                <InputLabel sx={{ 
+                  fontSize: '0.875rem',
+                  '&.MuiInputLabel-shrink': {
+                    transform: 'translate(14px, -18px) scale(0.75)'
+                  }
+                }}>Research Type</InputLabel>
+                <Select 
+                  value={research.type} 
+                  onChange={handleTypeChange}
+                  sx={{ 
+                    '& .MuiSelect-select': { 
+                      fontSize: '0.875rem',
+                      py: 0.5
+                    }
+                  }}
+                >
+                  <MenuItem value="general" sx={{ fontSize: '0.875rem' }}>General Research</MenuItem>
+                  <MenuItem value="literature" sx={{ fontSize: '0.875rem' }}>Literature Review</MenuItem>
+                  <MenuItem value="experiment" sx={{ fontSize: '0.875rem' }}>Experimental Research</MenuItem>
+                </Select>
+              </FormControl>
+            </Box>
+          </Box>
+
+          <Box sx={{ display: 'flex', gap: 1, mt: 3, justifyContent: 'flex-start', flexWrap: 'nowrap' }}>
+            <Button
+              variant="contained"
+              size="small"
+              onClick={handleGenerateTitle}
+              disabled={isGeneratingTitle || !research.researchTarget}
+              sx={{ fontSize: '1rem' }}
+            >
+              Generate Title
+            </Button>
+            <Button
+              variant="contained"
+              size="small"
+              onClick={handleGenerateOutline}
+              disabled={isGeneratingOutline || !research.title}
+              sx={{ fontSize: '1rem' }}
+            >
+              Generate Outline
+            </Button>
+            <Button
+              variant="contained"
+              size="small"
+              onClick={handleGenerateDocument}
+              disabled={isGeneratingDocument || !research.sections || research.sections.length === 0}
+              sx={{ fontSize: '1rem' }}
+            >
+              Generate Document
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={handleDownloadMarkdown}
+              disabled={!research.sections || research.sections.length === 0}
+              sx={{ 
+                fontSize: '1rem',
+                ...(research.sections && research.sections.length > 0 && !isGeneratingDocument && progressState.progress === 100 && {
+                  backgroundColor: '#1976d2',
+                  color: 'white',
+                  '&:hover': {
+                    backgroundColor: '#1565c0'
+                  }
+                })
+              }}
+            >
+              Download .md
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={handleDownloadDocx}
+              disabled={!research.sections || research.sections.length === 0}
+              sx={{ 
+                fontSize: '1rem',
+                ...(research.sections && research.sections.length > 0 && !isGeneratingDocument && progressState.progress === 100 && {
+                  backgroundColor: '#1976d2',
+                  color: 'white',
+                  '&:hover': {
+                    backgroundColor: '#1565c0'
+                  }
+                })
+              }}
+            >
+              Download .docx
+            </Button>
+          </Box>
+
+          {(isGeneratingTitle || isGeneratingOutline || isGeneratingDocument) && (
+            <Box sx={{ width: '100%', mt: 3 }}>
+              <LinearProgress variant="determinate" value={progressState.progress} />
+              <Typography variant="caption" sx={{ mt: 1 }}>
+                {progressState.message}
+              </Typography>
+            </Box>
+          )}
+
+          {research.sections && research.sections.length > 0 && (
+            <Box sx={{ width: '100%', mt: 3 }}>
+              <Paper sx={{ p: 2 }}>
+                <Typography variant="h6" gutterBottom>
+                  Document Outline
+                </Typography>
+                <List>
+                  {(research.sections || []).map((section: ResearchSection) => (
+                    <Box key={section.number}>
+                      <ListItem>
+                        <ListItemText
+                          primary={
+                            <Typography variant="subtitle1" sx={{ color: '#1976d2', fontWeight: 'bold' }}>
+                              {section.number}. {section.title}
+                            </Typography>
+                          }
+                          secondary={section.content}
+                        />
+                      </ListItem>
+                      {section.subsections && section.subsections.length > 0 && (
+                        <List sx={{ pl: 4 }}>
+                          {section.subsections.map((subsection: ResearchSection) => (
+                            <ListItem key={`${section.number}-${subsection.number}`}>
+                              <ListItemText
+                                primary={
+                                  <Typography variant="subtitle2" sx={{ color: '#1976d2', fontWeight: 'bold' }}>
+                                    {subsection.number} {subsection.title}
+                                  </Typography>
+                                }
+                                secondary={subsection.content}
+                              />
+                            </ListItem>
+                          ))}
+                        </List>
+                      )}
+                      <Divider sx={{ my: 1 }} />
+                    </Box>
+                  ))}
+                </List>
+              </Paper>
+            </Box>
+          )}
         </Box>
-      </Main>
+      </Box>
     </Box>
   );
 };

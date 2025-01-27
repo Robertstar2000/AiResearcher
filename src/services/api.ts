@@ -1,32 +1,70 @@
-import Groq from 'groq-sdk';
+// @ts-ignore
 import { z } from 'zod';
 import { sqliteService } from './sqliteService';
 
+// Use dynamic import for groq-sdk
+let Groq: any;
+
+async function loadGroq() {
+  try {
+    const module = await import('groq-sdk');
+    Groq = module.default || module.Groq;
+    if (!Groq) {
+      throw new Error('Failed to load Groq SDK');
+    }
+    console.log('Groq SDK loaded successfully');
+  } catch (error) {
+    console.error('Error loading Groq SDK:', error);
+    throw error;
+  }
+}
+
 // Utility functions
-function delay(ms: number) {
+async function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-const MAX_RETRIES = 8;
-const INITIAL_RETRY_DELAY = 1000; // 1 second
+function parseRateLimitError(error: any): number {
+  try {
+    if (error?.error?.message) {
+      const match = error.error.message.match(/Please try again in (\d+\.?\d*)s/);
+      if (match && match[1]) {
+        return Math.ceil(parseFloat(match[1]) * 1000); // Convert to milliseconds and round up
+      }
+    }
+  } catch (e) {
+    console.error('Error parsing rate limit message:', e);
+  }
+  return 5000; // Default to 5 seconds if we can't parse the wait time
+}
 
 async function withRetry<T>(
   operation: () => Promise<T>,
   retryCount = 0,
-  maxRetries = MAX_RETRIES,
-  initialDelay = INITIAL_RETRY_DELAY
+  maxRetries = 8,
+  initialDelay = 1000
 ): Promise<T> {
   try {
     return await operation();
   } catch (error: any) {
+    console.error(`Retry ${retryCount + 1}/${maxRetries}`);
+
     if (retryCount >= maxRetries) {
       throw error;
     }
 
-    const delayTime = initialDelay * Math.pow(2, retryCount);
-    console.log(`Retry ${retryCount + 1}/${maxRetries} after ${delayTime}ms delay`);
-    await delay(delayTime);
+    let waitTime: number;
     
+    if (error?.error?.code === 'rate_limit_exceeded') {
+      // For rate limit errors, use the wait time from the error message
+      waitTime = parseRateLimitError(error);
+      console.log(`Rate limit exceeded. Waiting ${waitTime}ms before retry...`);
+    } else {
+      // For other errors, use exponential backoff
+      waitTime = Math.min(initialDelay * Math.pow(2, retryCount), 700000); // Max 700 seconds
+    }
+
+    await delay(waitTime);
     return withRetry(operation, retryCount + 1, maxRetries, initialDelay);
   }
 }
@@ -100,7 +138,7 @@ const ResearchConfigSchema = z.object({
   groqApiUrl: z.string(),
   mode: z.nativeEnum(ResearchMode),
   type: z.nativeEnum(ResearchType),
-  topic: z.string().min(3)
+  topic: z.string().min(3).optional()
 });
 
 type ResearchConfig = z.infer<typeof ResearchConfigSchema>;
@@ -113,18 +151,35 @@ async function safeApiCall<T>(fn: () => Promise<T>): Promise<T> {
 class ResearchAPI {
   private static instance: ResearchAPI;
   private config: ResearchConfig;
-  private groq: Groq;
+  private groq: any;
 
   private constructor(config: ResearchConfig) {
     this.config = config;
-    this.groq = new Groq({ 
-      apiKey: config.groqApiKey,
-      dangerouslyAllowBrowser: true
-    });
+    if (!Groq) {
+      throw new ResearchError(
+        ResearchErrorType.AUTH_ERROR,
+        'Groq SDK not initialized. Please ensure loadGroq() is called before creating a ResearchAPI instance.'
+      );
+    }
+    try {
+      this.groq = new Groq({ 
+        apiKey: config.groqApiKey,
+        dangerouslyAllowBrowser: true
+      });
+      console.log('Groq client initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize Groq client:', error);
+      throw new ResearchError(
+        ResearchErrorType.AUTH_ERROR,
+        'Failed to initialize Groq client. Please check your API key and try again.'
+      );
+    }
   }
 
   public static async initialize(): Promise<ResearchAPI> {
     if (!ResearchAPI.instance) {
+      await loadGroq();
+
       const groqApiKey = import.meta.env.VITE_GROQ_API_KEY;
       const groqApiUrl = import.meta.env.VITE_GROQ_API_URL;
 
@@ -141,8 +196,7 @@ class ResearchAPI {
         groqApiKey,
         groqApiUrl: groqApiUrl || 'https://api.groq.com/openai/v1/chat/completions',
         mode: ResearchMode.Basic,
-        type: ResearchType.General,
-        topic: 'default'
+        type: ResearchType.General
       });
 
       ResearchAPI.instance = new ResearchAPI(validatedData);
@@ -436,6 +490,11 @@ ${typeSpecificInstructions}`
         sections: sections
       });
 
+      console.log('Generating content for sections:', sections.map(s => s.title));
+      
+      // Add a small delay between batches to help prevent rate limiting
+      await delay(1000);
+      
       const prompt = `Generate detailed content for each research section. The research is about: ${researchTarget}
 
 Research Parameters:
@@ -443,14 +502,24 @@ Research Parameters:
 - Type: ${type}
 
 Sections to expand:
-${sections.map((section, index) => `${index + 1}. ${section.title}`).join('\n')}
+${sections.map((section, index) => {
+  return `${index + 1}. ${section.title}
+[Generate detailed academic content focused specifically on: ${section.title}]`;
+}).join('\n\n')}
 
-For each section:
-1. Generate comprehensive, academically-styled content
+IMPORTANT FORMATTING REQUIREMENTS:
+1. DO NOT add any section numbers for example 1.2 oe 2. or 3.3 to the content
+2. DO NOT create new section headings or titles
+3. Write the content as continuous paragraphs without numbering or section markers you may use linefeeds
+4. Focus purely on the content itself without any structural formatting
+
+Content Requirements:
+1. Generate comprehensive, academically-styled content at post grad level
 2. Maintain academic tone and proper citations
 3. Include relevant examples and explanations
-4. Ensure logical flow between subsections
-5. Keep content focused on the section topic
+4. Ensure logical flow between ideas
+5. Keep content focused on each section's specific topic
+6. Add a list of formated citations and references at the end
 
 Format:
 Return a JSON array where each object has:
@@ -459,29 +528,91 @@ Return a JSON array where each object has:
   "content": "Generated content..."
 }`;
 
+      console.log('Sending prompt to Groq API:', prompt);
+
       const completion = await this.groq.chat.completions.create({
-        messages: [{ role: 'user', content: prompt }],
+        messages: [{ 
+          role: 'user', 
+          content: prompt,
+        }],
         model: 'mixtral-8x7b-32768',
         temperature: 0.7,
-        max_tokens: 4096,
+        max_tokens: 2048, // Reduced from 4096 to avoid potential timeout
         top_p: 1,
         stream: false
+      }).catch((error: unknown) => {
+        console.error('Groq API error:', error);
+        throw error; // Let withRetry handle the error
       });
 
+      console.log('Received response from Groq API:', completion?.choices?.[0]?.finish_reason);
+      
       const content = completion.choices[0]?.message?.content;
-      if (!content) throw new ResearchError(ResearchErrorType.GENERATION_ERROR, 'No content generated');
+      if (!content) {
+        console.error('No content in Groq response:', completion);
+        throw new ResearchError(ResearchErrorType.GENERATION_ERROR, 'No content generated');
+      }
 
+      console.log('Content length:', content.length);
+      console.log('Content preview:', content.substring(0, 200) + '...');
+      console.log('Attempting to parse content as JSON');
+      
       try {
-        const parsedContent = JSON.parse(content);
+        // Clean up the content before parsing
+        const cleanContent = content
+          .replace(/\[cite{.*?}\]/g, '') // Remove citation markers
+          .replace(/\\\[/g, '[')         // Fix escaped brackets
+          .replace(/\\\]/g, ']')         // Fix escaped brackets
+          .replace(/\\"/g, '"')          // Fix escaped quotes
+          .replace(/\n/g, ' ')           // Replace newlines with spaces
+          .trim();                       // Trim whitespace
+
+        console.log('Cleaned content:', cleanContent.substring(0, 100) + '...');
+        
+        let parsedContent;
+        try {
+          parsedContent = JSON.parse(cleanContent);
+        } catch (parseError) {
+          // If parsing fails, try to fix common JSON issues
+          const fixedContent = cleanContent
+            .replace(/\}\s*\{/g, '},{')  // Fix missing commas between objects
+            .replace(/([{\[,]\s*)(\w+):/g, '$1"$2":') // Add quotes to unquoted keys
+            .replace(/,\s*([}\]])/g, '$1'); // Remove trailing commas
+          
+          console.log('Attempting to parse fixed content');
+          parsedContent = JSON.parse(fixedContent);
+        }
+
         if (!Array.isArray(parsedContent)) {
+          console.error('Invalid content format, expected array:', typeof parsedContent);
           throw new ResearchError(ResearchErrorType.GENERATION_ERROR, 'Invalid content format');
         }
 
+        console.log('Successfully parsed content, mapping to sections');
+        
         // Map the generated content back to the original sections
-        return sections.map((section, index) => ({
-          ...section,
-          content: parsedContent[index]?.content || ''
-        }));
+        return sections.map((section, index) => {
+          const generatedContent = parsedContent[index]?.content;
+          if (!generatedContent) {
+            console.warn(`No content generated for section ${index + 1}: ${section.title}`);
+          }
+          
+          // Clean up the generated content
+          const cleanedContent = generatedContent
+            ? generatedContent
+                .replace(/\\n/g, '\n')           // Convert escaped newlines to actual newlines
+                .replace(/\[cite{.*?}\]/g, '')   // Remove citation markers
+                .replace(/\\\[/g, '[')           // Fix escaped brackets
+                .replace(/\\\]/g, ']')           // Fix escaped brackets
+                .replace(/\\"/g, '"')            // Fix escaped quotes
+                .trim()
+            : '';
+
+          return {
+            ...section,
+            content: cleanedContent
+          };
+        });
       } catch (error) {
         throw new ResearchError(
           ResearchErrorType.GENERATION_ERROR,

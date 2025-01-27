@@ -29,8 +29,10 @@
       "react-dom",
       "pdfmake"
     ],
-    "allowSyntheticDefaultImports": true,
+    "allowJs": true,
     "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
     "incremental": true
   },
   "include": ["src"],

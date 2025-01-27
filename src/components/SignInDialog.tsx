@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, KeyboardEvent } from 'react';
 import { useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { setUser } from '../store/slices/authSlice';
@@ -11,7 +11,9 @@ import {
   Button,
   Box,
   Alert,
+  IconButton,
 } from '@mui/material';
+import { Close as CloseIcon } from '@mui/icons-material';
 
 interface SignInDialogProps {
   open: boolean;
@@ -54,42 +56,66 @@ export default function SignInDialog({ open, onClose }: SignInDialogProps) {
     }
   };
 
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Enter' && password && email) {
+      handleLogin(event);
+    }
+  };
+
   return (
     <Dialog 
       open={open} 
       onClose={onClose}
-      maxWidth="sm"
+      maxWidth="xs"
       fullWidth
+      PaperProps={{
+        sx: { position: 'relative' }
+      }}
     >
-      <DialogTitle sx={{ textAlign: 'center', pt: 3 }}>
+      <IconButton
+        onClick={onClose}
+        sx={{
+          position: 'absolute',
+          right: 8,
+          top: 8,
+          color: (theme) => theme.palette.grey[500],
+        }}
+      >
+        <CloseIcon />
+      </IconButton>
+      <DialogTitle sx={{ textAlign: 'center', pt: 2, pb: 1, typography: 'h6' }}>
         Welcome Back
       </DialogTitle>
-      <DialogContent>
+      <DialogContent sx={{ pb: 2, px: 2 }}>
         {error && (
-          <Alert severity="error" sx={{ mb: 2, width: '100%' }}>
+          <Alert severity="error" sx={{ mb: 1, width: '100%', py: 0 }}>
             {error}
           </Alert>
         )}
         <Box component="form" onSubmit={handleLogin} sx={{ width: '100%' }}>
           <TextField
-            margin="normal"
+            margin="dense"
             required
             fullWidth
             label="Email"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            sx={{ mb: 2 }}
+            onKeyDown={handleKeyDown}
+            size="small"
+            sx={{ mb: 1 }}
           />
           <TextField
-            margin="normal"
+            margin="dense"
             required
             fullWidth
             label="Password"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            sx={{ mb: 2 }}
+            onKeyDown={handleKeyDown}
+            size="small"
+            sx={{ mb: 1 }}
           />
           <Button
             type="submit"
@@ -97,15 +123,12 @@ export default function SignInDialog({ open, onClose }: SignInDialogProps) {
             variant="contained"
             disabled={isLoading}
             sx={{
-              mt: 3,
-              mb: 2,
-              background: 'linear-gradient(45deg, #2196F3 30%, #21CBF3 90%)',
-              '&:hover': {
-                background: 'linear-gradient(45deg, #1976D2 30%, #00BCD4 90%)',
-              }
+              mt: 1,
+              mb: 1,
+              py: 1,
             }}
           >
-            {isLoading ? 'Signing In...' : 'Sign In'}
+            {isLoading ? 'Signing in...' : 'Sign In'}
           </Button>
         </Box>
       </DialogContent>
