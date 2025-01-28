@@ -481,7 +481,6 @@ ${typeSpecificInstructions}`
     type: ResearchType
   ): Promise<ResearchSection[]> {
     return await withRetry(async () => {
-      // Process sections in smaller batches to avoid token limits
       const batchSize = 2;
       const batches = [];
       
@@ -506,22 +505,39 @@ IMPORTANT FORMATTING REQUIREMENTS:
 2. DO NOT create new section headings or titles
 3. Write the content as continuous paragraphs without numbering or section markers
 4. Focus purely on the content itself without any structural formatting
+5. After each section's main content, add TWO blank lines followed by "References:" on its own line
+6. List each reference on a new line in APA 7th edition format
+7. After references, add TWO blank lines followed by "Citations:" on its own line
+8. List each in-text citation on a new line in APA format (Author, Year)
 
 Content Requirements:
 1. Generate comprehensive, academically-styled content at post-graduate level
-2. Maintain academic tone and proper citations
+2. Maintain academic tone with proper citations throughout the text
 3. Include relevant examples, data, and explanations
 4. Ensure logical flow between ideas and concepts
 5. Keep content focused on each section's specific topic
-6. Add appropriate citations and references
-7. Use field-specific terminology and concepts
-8. Support arguments with evidence and research findings
+6. Include at least 3-5 relevant academic references per section
+7. Use in-text citations when introducing key concepts, statistics, or quotes
+8. Prefer recent academic sources (last 5-10 years) when available
+9. Include a mix of reference types (journals, books, conference papers)
+10. Ensure citations in the text match the references list
+
+Reference and Citation Requirements:
+1. Format all references in APA 7th edition style
+2. Include DOI numbers when available
+3. For journal articles include: authors, year, title, journal name, volume, issue, pages
+4. For books include: authors/editors, year, title, publisher, location if applicable
+5. For web resources include: author/organization, year, title, URL, access date
+6. Sort references alphabetically by author's last name
+7. Use proper capitalization in titles
+8. Include all authors (don't use et al. in references)
+9. Use proper italicization for journal names and book titles
 
 Format the response as a JSON array:
 [
   {
     "title": "Section Title",
-    "content": "Generated content..."
+    "content": "Generated content...\\n\\nReferences:\\n[References in APA format]\\n\\nCitations:\\n[In-text citations]"
   }
 ]`;
 
@@ -548,7 +564,7 @@ Format the response as a JSON array:
             .replace(/\\\[/g, '[')
             .replace(/\\\]/g, ']')
             .replace(/\\"/g, '"')
-            .replace(/\n/g, ' ')
+            .replace(/\n/g, '\\n') // Preserve newlines for references and citations
             .trim();
 
           let parsedContent;
@@ -582,7 +598,7 @@ Format the response as a JSON array:
             return {
               ...section,
               content: generated.content
-                .replace(/\\n/g, '\n')
+                .replace(/\\n/g, '\n') // Convert back to actual newlines
                 .replace(/\s+/g, ' ')
                 .trim()
             };
