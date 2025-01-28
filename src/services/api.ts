@@ -480,146 +480,127 @@ ${typeSpecificInstructions}`
     mode: ResearchMode,
     type: ResearchType
   ): Promise<ResearchSection[]> {
-    return await safeApiCall(async () => {
-      // Validate configuration
-      await this.validateConfig({
-        topic: sections[0]?.title || '',
-        mode: mode,
-        type: type,
-        researchTarget: researchTarget,
-        sections: sections
-      });
-
-      console.log('Generating content for sections:', sections.map(s => s.title));
+    return await withRetry(async () => {
+      // Process sections in smaller batches to avoid token limits
+      const batchSize = 2;
+      const batches = [];
       
-      // Add a small delay between batches to help prevent rate limiting
-      await delay(1000);
-      
-      const prompt = `Generate detailed content for each research section. The research is about: ${researchTarget}
+      for (let i = 0; i < sections.length; i += batchSize) {
+        const batch = sections.slice(i, i + batchSize);
+        console.log(`Processing batch ${i / batchSize + 1} of ${Math.ceil(sections.length / batchSize)}`);
+        
+        const prompt = `Generate detailed academic content for each research section. The research topic is: ${researchTarget}
 
 Research Parameters:
 - Mode: ${mode}
 - Type: ${type}
 
 Sections to expand:
-${sections.map((section, index) => {
+${batch.map((section, index) => {
   return `${index + 1}. ${section.title}
 [Generate detailed academic content focused specifically on: ${section.title}]`;
 }).join('\n\n')}
 
 IMPORTANT FORMATTING REQUIREMENTS:
-1. DO NOT add any section numbers for example 1.2 oe 2. or 3.3 to the content
+1. DO NOT add any section numbers for example 1.2 or 2. or 3.3 to the content
 2. DO NOT create new section headings or titles
-3. Write the content as continuous paragraphs without numbering or section markers you may use linefeeds
+3. Write the content as continuous paragraphs without numbering or section markers
 4. Focus purely on the content itself without any structural formatting
 
 Content Requirements:
-1. Generate comprehensive, academically-styled content at post grad level
+1. Generate comprehensive, academically-styled content at post-graduate level
 2. Maintain academic tone and proper citations
-3. Include relevant examples and explanations
-4. Ensure logical flow between ideas
+3. Include relevant examples, data, and explanations
+4. Ensure logical flow between ideas and concepts
 5. Keep content focused on each section's specific topic
-6. Add a list of formated citations and references at the end
+6. Add appropriate citations and references
+7. Use field-specific terminology and concepts
+8. Support arguments with evidence and research findings
 
-Format:
-Return a JSON array where each object has:
-{
-  "title": "Section Title",
-  "content": "Generated content..."
-}`;
+Format the response as a JSON array:
+[
+  {
+    "title": "Section Title",
+    "content": "Generated content..."
+  }
+]`;
 
-      console.log('Sending prompt to Groq API:', prompt);
-
-      const completion = await this.groq.chat.completions.create({
-        messages: [{ 
-          role: 'user', 
-          content: prompt,
-        }],
-        model: 'mixtral-8x7b-32768',
-        temperature: 0.7,
-        max_tokens: 2048, // Reduced from 4096 to avoid potential timeout
-        top_p: 1,
-        stream: false
-      }).catch((error: unknown) => {
-        console.error('Groq API error:', error);
-        throw error; // Let withRetry handle the error
-      });
-
-      console.log('Received response from Groq API:', completion?.choices?.[0]?.finish_reason);
-      
-      const content = completion.choices[0]?.message?.content;
-      if (!content) {
-        console.error('No content in Groq response:', completion);
-        throw new ResearchError(ResearchErrorType.GENERATION_ERROR, 'No content generated');
-      }
-
-      console.log('Content length:', content.length);
-      console.log('Content preview:', content.substring(0, 200) + '...');
-      console.log('Attempting to parse content as JSON');
-      
-      try {
-        // Clean up the content before parsing
-        const cleanContent = content
-          .replace(/\[cite{.*?}\]/g, '') // Remove citation markers
-          .replace(/\\\[/g, '[')         // Fix escaped brackets
-          .replace(/\\\]/g, ']')         // Fix escaped brackets
-          .replace(/\\"/g, '"')          // Fix escaped quotes
-          .replace(/\n/g, ' ')           // Replace newlines with spaces
-          .trim();                       // Trim whitespace
-
-        console.log('Cleaned content:', cleanContent.substring(0, 100) + '...');
-        
-        let parsedContent;
         try {
-          parsedContent = JSON.parse(cleanContent);
-        } catch (parseError) {
-          // If parsing fails, try to fix common JSON issues
-          const fixedContent = cleanContent
-            .replace(/\}\s*\{/g, '},{')  // Fix missing commas between objects
-            .replace(/([{\[,]\s*)(\w+):/g, '$1"$2":') // Add quotes to unquoted keys
-            .replace(/,\s*([}\]])/g, '$1'); // Remove trailing commas
+          console.log(`Sending batch ${i / batchSize + 1} to Groq API`);
           
-          console.log('Attempting to parse fixed content');
-          parsedContent = JSON.parse(fixedContent);
-        }
+          const completion = await this.groq.chat.completions.create({
+            messages: [{ role: 'user', content: prompt }],
+            model: 'mixtral-8x7b-32768',
+            temperature: 0.7,
+            max_tokens: 1800,
+            top_p: 1,
+            stream: false
+          });
 
-        if (!Array.isArray(parsedContent)) {
-          console.error('Invalid content format, expected array:', typeof parsedContent);
-          throw new ResearchError(ResearchErrorType.GENERATION_ERROR, 'Invalid content format');
-        }
-
-        console.log('Successfully parsed content, mapping to sections');
-        
-        // Map the generated content back to the original sections
-        return sections.map((section, index) => {
-          const generatedContent = parsedContent[index]?.content;
-          if (!generatedContent) {
-            console.warn(`No content generated for section ${index + 1}: ${section.title}`);
+          const content = completion.choices[0]?.message?.content;
+          if (!content) {
+            throw new Error('No content generated');
           }
-          
-          // Clean up the generated content
-          const cleanedContent = generatedContent
-            ? generatedContent
-                .replace(/\\n/g, '\n')           // Convert escaped newlines to actual newlines
-                .replace(/\[cite{.*?}\]/g, '')   // Remove citation markers
-                .replace(/\\\[/g, '[')           // Fix escaped brackets
-                .replace(/\\\]/g, ']')           // Fix escaped brackets
-                .replace(/\\"/g, '"')            // Fix escaped quotes
-                .trim()
-            : '';
 
-          return {
-            ...section,
-            content: cleanedContent
-          };
-        });
-      } catch (error) {
-        throw new ResearchError(
-          ResearchErrorType.GENERATION_ERROR,
-          'Failed to parse generated content',
-          { error }
-        );
+          // Clean and parse the content
+          const cleanContent = content
+            .replace(/\[cite{.*?}\]/g, '')
+            .replace(/\\\[/g, '[')
+            .replace(/\\\]/g, ']')
+            .replace(/\\"/g, '"')
+            .replace(/\n/g, ' ')
+            .trim();
+
+          let parsedContent;
+          try {
+            parsedContent = JSON.parse(cleanContent);
+          } catch (parseError) {
+            console.error('Failed to parse content:', parseError);
+            console.log('Attempting to fix malformed JSON');
+            
+            // Try to fix common JSON issues
+            const fixedContent = cleanContent
+              .replace(/\}\s*\{/g, '},{')
+              .replace(/([{\[,]\s*)(\w+):/g, '$1"$2":')
+              .replace(/,\s*([}\]])/g, '$1')
+              .replace(/^[^[]*(\[.*\])[^]*$/, '$1'); // Extract array portion
+            
+            parsedContent = JSON.parse(fixedContent);
+          }
+
+          if (!Array.isArray(parsedContent)) {
+            throw new Error('Invalid content format');
+          }
+
+          // Map generated content to sections
+          const processedBatch = batch.map((section, index) => {
+            const generated = parsedContent[index];
+            if (!generated?.content) {
+              throw new Error(`No content for section: ${section.title}`);
+            }
+
+            return {
+              ...section,
+              content: generated.content
+                .replace(/\\n/g, '\n')
+                .replace(/\s+/g, ' ')
+                .trim()
+            };
+          });
+
+          batches.push(...processedBatch);
+          
+          // Add delay between batches to avoid rate limits
+          if (i + batchSize < sections.length) {
+            await delay(2000);
+          }
+        } catch (error) {
+          console.error(`Error processing batch ${i / batchSize + 1}:`, error);
+          throw error;
+        }
       }
+
+      return batches;
     });
   }
 

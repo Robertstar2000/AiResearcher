@@ -1,4 +1,5 @@
-import initSqlJs, { Database, SqlValue } from 'sql.js';
+import initSqlJs, { Database } from 'sql.js';
+import { storageService } from './storageService';
 
 // Types
 export interface User {
@@ -26,6 +27,10 @@ class SQLiteService {
   private static instance: SQLiteService;
   private initialized = false;
   private initializationPromise: Promise<void> | null = null;
+  private maxRetries = 3;
+  private retryCount = 0;
+  private retryDelay = 1000; // 1 second
+  private readonly SQLITE_STORE_KEY = 'sqlite_db';
 
   private constructor() {}
 
@@ -36,58 +41,132 @@ class SQLiteService {
     return SQLiteService.instance;
   }
 
+  private async loadFromIndexedDB(): Promise<Uint8Array | null> {
+    try {
+      const data = await storageService.getData('sqlite', this.SQLITE_STORE_KEY);
+      if (data) {
+        console.log('Loaded database from IndexedDB');
+        return new Uint8Array(data);
+      }
+      return null;
+    } catch (error) {
+      console.error('Failed to load database from IndexedDB:', error);
+      return null;
+    }
+  }
+
+  private async saveToIndexedDB(): Promise<void> {
+    if (!this.db) return;
+
+    try {
+      const data = this.db.export();
+      await storageService.saveData('sqlite', this.SQLITE_STORE_KEY, Array.from(data));
+      console.log('Saved database to IndexedDB');
+    } catch (error) {
+      console.error('Failed to save database to IndexedDB:', error);
+    }
+  }
+
+  private async waitForWasm(): Promise<void> {
+    const wasmUrl = '/sql-wasm.wasm';
+    let attempts = 0;
+    const maxAttempts = 5;
+    const delay = 1000;
+
+    while (attempts < maxAttempts) {
+      try {
+        const response = await fetch(wasmUrl);
+        if (response.ok) {
+          console.log('WASM file is available');
+          return;
+        }
+        console.log(`WASM file not ready (attempt ${attempts + 1}/${maxAttempts})`);
+      } catch (error) {
+        console.log(`Error checking WASM file (attempt ${attempts + 1}/${maxAttempts}):`, error);
+      }
+      attempts++;
+      if (attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    throw new Error('Failed to load WASM file after multiple attempts');
+  }
+
   public async initialize(): Promise<void> {
     if (this.initialized) {
       console.log('SQLite already initialized');
       return;
     }
 
-    // If initialization is already in progress, return the existing promise
     if (this.initializationPromise) {
       return this.initializationPromise;
     }
 
-    this.initializationPromise = this._initialize();
+    this.initializationPromise = this.initializeWithRetry();
     return this.initializationPromise;
   }
 
-  private async _initialize(): Promise<void> {
+  private async initializeWithRetry(): Promise<void> {
     try {
+      await this.waitForWasm();
       console.log('Initializing SQLite...');
-      const wasmBinaryUrl = '/sql-wasm.wasm';
-
-      // First, try to fetch the WASM file to ensure it exists
-      try {
-        const response = await fetch(wasmBinaryUrl);
-        if (!response.ok) {
-          throw new Error(`Failed to load WASM file: ${response.statusText}`);
-        }
-      } catch (error) {
-        console.error('Error loading WASM file:', error);
-        throw error;
-      }
-
+      
+      // Initialize storage service first
+      await storageService.initialize();
+      
       const SQL = await initSqlJs({
-        locateFile: () => wasmBinaryUrl
+        locateFile: () => `/sql-wasm.wasm`
       });
+
+      // Try to load existing database from IndexedDB
+      const savedData = await this.loadFromIndexedDB();
       
-      // Clear existing database for fresh start
-      localStorage.removeItem('research_db');
-      
-      // Create new database
-      this.db = new SQL.Database();
-      await this.createTables();
+      if (savedData) {
+        // Load existing database
+        this.db = new SQL.Database(savedData);
+        console.log('Loaded existing database from IndexedDB');
+      } else {
+        // Create new database
+        this.db = new SQL.Database();
+        await this.createTables();
+        console.log('Created new database');
+      }
 
       // Setup auto-save
       this.setupAutoSave();
       
       this.initialized = true;
+      this.retryCount = 0;
       console.log('SQLite initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize SQLite database:', error);
-      this.initializationPromise = null; // Reset the promise so we can try again
-      throw error;
+      console.error(`SQLite initialization failed (attempt ${this.retryCount + 1}/${this.maxRetries}):`, error);
+      
+      if (this.retryCount < this.maxRetries) {
+        this.retryCount++;
+        console.log(`Retrying in ${this.retryDelay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, this.retryDelay));
+        this.initializationPromise = null;
+        return this.initialize();
+      }
+      
+      throw new Error(`Failed to initialize SQLite after ${this.maxRetries} attempts`);
     }
+  }
+
+  private setupAutoSave(): void {
+    // Save every 30 seconds if there are changes
+    setInterval(async () => {
+      if (this.db) {
+        await this.saveToIndexedDB();
+      }
+    }, 30000);
+
+    // Save before page unload
+    window.addEventListener('beforeunload', async () => {
+      if (this.db) {
+        await this.saveToIndexedDB();
+      }
+    });
   }
 
   private async createTables(): Promise<void> {
@@ -130,46 +209,6 @@ class SQLiteService {
       console.error('Error creating tables:', error);
       throw error;
     }
-  }
-
-  // Auto-save setup
-  private setupAutoSave(): void {
-    const saveDb = () => {
-      if (this.db) {
-        const data = this.db.export();
-        const base64 = btoa(Array.from(data).map(byte => String.fromCharCode(byte)).join(''));
-        localStorage.setItem('research_db', base64);
-      }
-    };
-
-    // Save on these operations
-    const originalCreateUser = this.createUser.bind(this);
-    this.createUser = async (...args) => {
-      const result = await originalCreateUser(...args);
-      saveDb();
-      return result;
-    };
-
-    const originalSaveResearch = this.saveResearchEntry.bind(this);
-    this.saveResearchEntry = async (...args) => {
-      const result = await originalSaveResearch(...args);
-      saveDb();
-      return result;
-    };
-
-    const originalUpdateResearch = this.updateResearchEntry.bind(this);
-    this.updateResearchEntry = async (...args) => {
-      const result = await originalUpdateResearch(...args);
-      saveDb();
-      return result;
-    };
-
-    const originalDeleteResearch = this.deleteResearchEntry.bind(this);
-    this.deleteResearchEntry = async (...args) => {
-      const result = await originalDeleteResearch(...args);
-      saveDb();
-      return result;
-    };
   }
 
   // User operations
@@ -255,8 +294,8 @@ class SQLiteService {
       
       if (result.length > 0 && result[0].values.length > 0) {
         const row = result[0].values[0];
-        const getValue = (value: SqlValue | null): string => value ? String(value) : '';
-        const getOptionalValue = (value: SqlValue | null): string | undefined => value ? String(value) : undefined;
+        const getValue = (value: any): string => value ? String(value) : '';
+        const getOptionalValue = (value: any): string | undefined => value ? String(value) : undefined;
         
         return {
           id: getValue(row[0]),
@@ -290,8 +329,8 @@ class SQLiteService {
       return [];
     }
 
-    const getValue = (value: SqlValue | null): string => value ? String(value) : '';
-    const getOptionalValue = (value: SqlValue | null): string | undefined => value ? String(value) : undefined;
+    const getValue = (value: any): string => value ? String(value) : '';
+    const getOptionalValue = (value: any): string | undefined => value ? String(value) : undefined;
 
     return result[0].values.map(row => ({
       id: getValue(row[0]),
@@ -338,8 +377,8 @@ class SQLiteService {
       return [];
     }
 
-    const getValue = (value: SqlValue | null): string => value ? String(value) : '';
-    const getJsonValue = (value: SqlValue | null): any => value ? JSON.parse(String(value)) : null;
+    const getValue = (value: any): string => value ? String(value) : '';
+    const getJsonValue = (value: any): any => value ? JSON.parse(String(value)) : null;
 
     return result[0].values.map(row => ({
       id: getValue(row[0]),
