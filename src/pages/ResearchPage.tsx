@@ -16,6 +16,7 @@ import {
   TextField,
   Typography,
   Divider,
+  CircularProgress,
 } from '@mui/material';
 import { RootState } from '../store/store';
 import { setMode, setResearchTarget, setTitle, setType, setSections, setError } from '../store/slices/researchSlice';
@@ -494,9 +495,14 @@ const ResearchPage = () => {
           {(isGeneratingTitle || isGeneratingOutline || isGeneratingDocument) && (
             <Box sx={{ width: '100%', mt: 3 }}>
               <LinearProgress variant="determinate" value={progressState.progress} />
-              <Typography variant="caption" sx={{ mt: 1 }}>
-                {progressState.message}
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
+                {isGeneratingDocument && progressState.progress < 100 && (
+                  <CircularProgress size={16} />
+                )}
+                <Typography variant="caption">
+                  {progressState.message}
+                </Typography>
+              </Box>
             </Box>
           )}
 
