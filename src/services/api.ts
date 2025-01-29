@@ -481,74 +481,73 @@ ${typeSpecificInstructions}`
     type: ResearchType
   ): Promise<ResearchSection[]> {
     return await withRetry(async () => {
-      const batchSize = 2;
+      // Process one section at a time for better reliability
+      const batchSize = 1;
       const batches = [];
+      let lastRequestTime = 0;
       
       for (let i = 0; i < sections.length; i += batchSize) {
-        const batch = sections.slice(i, i + batchSize);
-        console.log(`Processing batch ${i / batchSize + 1} of ${Math.ceil(sections.length / batchSize)}`);
+        // Ensure minimum 3 second gap between requests
+        const timeSinceLastRequest = Date.now() - lastRequestTime;
+        if (timeSinceLastRequest < 3000) {
+          await delay(3000 - timeSinceLastRequest);
+        }
         
-        const prompt = `Generate detailed academic content for each research section. The research topic is: ${researchTarget}
+        const batch = sections.slice(i, i + batchSize);
+        console.log(`Processing section ${i + 1} of ${sections.length}`);
+        
+        const prompt = `Task: Academic content generation for research topic: ${researchTarget}
+Mode: ${mode} | Type: ${type}
 
-Research Parameters:
-- Mode: ${mode}
-- Type: ${type}
+Target section: ${batch[0].title}
 
-Sections to expand:
-${batch.map((section, index) => {
-  return `${index + 1}. ${section.title}
-[Generate detailed academic content focused specifically on: ${section.title}]`;
-}).join('\n\n')}
+FORMAT:
+P1: No section numbers/headers
+P2: Continuous prose
+P3: Main content + 2NL + "References:" + 1NL + [APA7refs] + 2NL + "Citations:" + 1NL + [APAcites]
+P4: JSON output: {"title": str, "content": str}
 
-IMPORTANT FORMATTING REQUIREMENTS:
-1. DO NOT add any section numbers for example 1.2 or 2. or 3.3 to the content
-2. DO NOT create new section headings or titles
-3. Write the content as continuous paragraphs without numbering or section markers
-4. Focus purely on the content itself without any structural formatting
-5. After each section's main content, add TWO blank lines followed by "References:" on its own line
-6. List each reference on a new line in APA 7th edition format
-7. After references, add TWO blank lines followed by "Citations:" on its own line
-8. List each in-text citation on a new line in APA format (Author, Year)
+CONTENT_SPEC:
+C1: PostGrad level
+C2: In-text citations
+C3: Data/examples
+C4: Topic-focused
+C5: Recent refs (5-10y)
+C6: 3-5 refs min
+C7: Mixed ref types
 
-Content Requirements:
-1. Generate comprehensive, academically-styled content at post-graduate level
-2. Maintain academic tone with proper citations throughout the text
-3. Include relevant examples, data, and explanations
-4. Ensure logical flow between ideas and concepts
-5. Keep content focused on each section's specific topic
-6. Include at least 3-5 relevant academic references per section
-7. Use in-text citations when introducing key concepts, statistics, or quotes
-8. Prefer recent academic sources (last 5-10 years) when available
-9. Include a mix of reference types (journals, books, conference papers)
-10. Ensure citations in the text match the references list
+REF_RULES:
+R1: APA7
+R2: Full author names
+R3: DOIs if exists
+R4: Alpha sort
+R5: Journal: author(s),year,title,journal,vol,issue,pp,doi
+R6: Book: author(s),year,title,publisher[,loc]
+R7: Web: author/org,year,title,url,date
+R8: Proper italics
+R9: Title caps
 
-Reference and Citation Requirements:
-1. Format all references in APA 7th edition style
-2. Include DOI numbers when available
-3. For journal articles include: authors, year, title, journal name, volume, issue, pages
-4. For books include: authors/editors, year, title, publisher, location if applicable
-5. For web resources include: author/organization, year, title, URL, access date
-6. Sort references alphabetically by author's last name
-7. Use proper capitalization in titles
-8. Include all authors (don't use et al. in references)
-9. Use proper italicization for journal names and book titles
+CITE_RULES:
+T1: (Author, Year)
+T2: Match refs
+T3: Key points only
+T4: No et al.
 
-Format the response as a JSON array:
-[
-  {
-    "title": "Section Title",
-    "content": "Generated content...\\n\\nReferences:\\n[References in APA format]\\n\\nCitations:\\n[In-text citations]"
-  }
-]`;
+Generate comprehensive academic content following above rules exactly.`;
 
         try {
-          console.log(`Sending batch ${i / batchSize + 1} to Groq API`);
+          console.log(`Requesting content for section: ${batch[0].title}`);
+          lastRequestTime = Date.now();
+          
+          // Calculate approximate prompt tokens
+          const promptTokens = Math.ceil(prompt.length / 4);
+          const maxResponseTokens = Math.min(32768 - promptTokens - 100, 1500); // Leave 100 token buffer
           
           const completion = await this.groq.chat.completions.create({
             messages: [{ role: 'user', content: prompt }],
             model: 'mixtral-8x7b-32768',
             temperature: 0.7,
-            max_tokens: 1800,
+            max_tokens: maxResponseTokens,
             top_p: 1,
             stream: false
           });
@@ -579,45 +578,41 @@ Format the response as a JSON array:
               .replace(/\}\s*\{/g, '},{')
               .replace(/([{\[,]\s*)(\w+):/g, '$1"$2":')
               .replace(/,\s*([}\]])/g, '$1')
-              .replace(/^[^[]*(\[.*\])[^]*$/, '$1'); // Extract array portion
+              .replace(/^[^{]*(\{.*\})[^]*$/, '$1'); // Extract object portion
             
             parsedContent = JSON.parse(fixedContent);
           }
 
-          if (!Array.isArray(parsedContent)) {
+          if (!parsedContent?.content) {
             throw new Error('Invalid content format');
           }
 
-          // Map generated content to sections
-          const processedBatch = batch.map((section, index) => {
-            const generated = parsedContent[index];
-            if (!generated?.content) {
-              throw new Error(`No content for section: ${section.title}`);
-            }
+          // Process the section
+          const processedContent = {
+            ...batch[0],
+            content: parsedContent.content
+              .replace(/\\n/g, '\n') // Convert back to actual newlines
+              .replace(/\s+/g, ' ')
+              .trim()
+          };
 
-            return {
-              ...section,
-              content: generated.content
-                .replace(/\\n/g, '\n') // Convert back to actual newlines
-                .replace(/\s+/g, ' ')
-                .trim()
-            };
-          });
-
-          batches.push(...processedBatch);
+          batches.push(processedContent);
           
-          // Add delay between batches to avoid rate limits
+          // Add exponential delay between sections based on position
+          const baseDelay = 3000;
+          const exponentialFactor = Math.floor(i / 5); // Increase delay every 5 sections
+          const nextDelay = baseDelay * Math.pow(1.5, exponentialFactor);
           if (i + batchSize < sections.length) {
-            await delay(2000);
+            await delay(nextDelay);
           }
         } catch (error) {
-          console.error(`Error processing batch ${i / batchSize + 1}:`, error);
+          console.error(`Error processing section ${i + 1}:`, error);
           throw error;
         }
       }
 
       return batches;
-    });
+    }, 0, 10, 3000); // Increased initial delay and max retries
   }
 
   public async validateConfig(config: {
