@@ -480,11 +480,17 @@ ${typeSpecificInstructions}`
   ): Promise<ResearchSection[]> {
     // Use withRetry but with increased retries and delay for document generation
     return await withRetry(async () => {
-      // Process one section at a time to avoid token limits
-      const batchSize = 1;
+      const batchSize = 1; // Process one section at a time
       const batches = [];
+      let lastRequestTime = 0;
       
       for (let i = 0; i < sections.length; i += batchSize) {
+        // Ensure minimum 3 second gap between requests
+        const timeSinceLastRequest = Date.now() - lastRequestTime;
+        if (timeSinceLastRequest < 3000) {
+          await delay(3000 - timeSinceLastRequest);
+        }
+
         const batch = sections.slice(i, i + batchSize);
         console.log(`Processing section ${i + 1} of ${sections.length}`);
         
@@ -534,18 +540,14 @@ Reference and Citation Requirements:
 9. Use proper italicization for journal names and book titles`;
 
         try {
-          // Add delay between sections to avoid rate limits
-          if (i > 0) {
-            await delay(3000);
-          }
-
           console.log(`Requesting content for section: ${batch[0].title}`);
+          lastRequestTime = Date.now();
           
           const completion = await this.groq.chat.completions.create({
             messages: [{ role: 'user', content: prompt }],
             model: 'mixtral-8x7b-32768',
             temperature: 0.7,
-            max_tokens: 1500, // Reduced from 1800 to ensure we stay within limits
+            max_tokens: 1800,
             top_p: 1,
             stream: false
           });
@@ -571,6 +573,15 @@ Reference and Citation Requirements:
           };
 
           batches.push(processedContent);
+
+          // Add exponential delay between sections based on position
+          const baseDelay = 3000;
+          const exponentialFactor = Math.floor(i / 5); // Increase delay every 5 sections
+          const nextDelay = baseDelay * Math.pow(1.5, exponentialFactor);
+          if (i + batchSize < sections.length) {
+            console.log(`Waiting ${nextDelay}ms before next section...`);
+            await delay(nextDelay);
+          }
         } catch (error) {
           console.error(`Error processing section ${i + 1}:`, error);
           throw error;
