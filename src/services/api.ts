@@ -478,23 +478,27 @@ ${typeSpecificInstructions}`
     mode: ResearchMode,
     type: ResearchType
   ): Promise<ResearchSection[]> {
-    // Use withRetry but with increased retries and delay for document generation
+    // Use withRetry with 15 second delays
     return await withRetry(async () => {
-      const batchSize = 1; // Process one section at a time
+      const batchSize = 1;
       const batches = [];
       let lastRequestTime = 0;
       
       for (let i = 0; i < sections.length; i += batchSize) {
-        // Ensure minimum 3 second gap between requests
+        // Ensure minimum 15 second gap between requests
         const timeSinceLastRequest = Date.now() - lastRequestTime;
-        if (timeSinceLastRequest < 3000) {
-          await delay(3000 - timeSinceLastRequest);
+        if (timeSinceLastRequest < 15000) {
+          await delay(15000 - timeSinceLastRequest);
         }
 
         const batch = sections.slice(i, i + batchSize);
         console.log(`Processing section ${i + 1} of ${sections.length}`);
         
-        const prompt = `Generate detailed academic content for each research section. The research topic is: ${researchTarget}
+        try {
+          console.log(`Requesting content for section: ${batch[0].title}`);
+          lastRequestTime = Date.now();
+          
+          const prompt = `Generate detailed academic content for each research section. The research topic is: ${researchTarget}
 
 Research Parameters:
 - Mode: ${mode}
@@ -539,10 +543,6 @@ Reference and Citation Requirements:
 8. Include all authors (don't use et al. in references)
 9. Use proper italicization for journal names and book titles`;
 
-        try {
-          console.log(`Requesting content for section: ${batch[0].title}`);
-          lastRequestTime = Date.now();
-          
           const completion = await this.groq.chat.completions.create({
             messages: [{ role: 'user', content: prompt }],
             model: 'mixtral-8x7b-32768',
@@ -574,13 +574,10 @@ Reference and Citation Requirements:
 
           batches.push(processedContent);
 
-          // Add exponential delay between sections based on position
-          const baseDelay = 3000;
-          const exponentialFactor = Math.floor(i / 5); // Increase delay every 5 sections
-          const nextDelay = baseDelay * Math.pow(1.5, exponentialFactor);
+          // Add fixed 15 second delay between sections
           if (i + batchSize < sections.length) {
-            console.log(`Waiting ${nextDelay}ms before next section...`);
-            await delay(nextDelay);
+            console.log('Waiting 15 seconds before next section...');
+            await delay(15000);
           }
         } catch (error) {
           console.error(`Error processing section ${i + 1}:`, error);
@@ -589,7 +586,7 @@ Reference and Citation Requirements:
       }
 
       return batches;
-    }, 0, 8, 3000); // Increased retries and initial delay for document generation
+    }, 0, 12, 15000); // 15 second initial delay, 12 retries
   }
 
   public async validateConfig(config: {
