@@ -22,6 +22,14 @@ export interface ResearchEntry {
   updated_at: string;
 }
 
+interface CreateUserData {
+  email: string;
+  password: string;
+  name: string;
+  occupation?: string;
+  location?: string;
+}
+
 class SQLiteService {
   private db: Database | null = null;
   private static instance: SQLiteService;
@@ -212,39 +220,67 @@ class SQLiteService {
   }
 
   // User operations
-  public async createUser(userData: Omit<User, 'id' | 'created_at'>): Promise<User> {
-    if (!this.initialized) {
-      await this.initialize();
-    }
-    
-    if (!this.db) throw new Error('Database not initialized');
-
+  public async authenticateUser(email: string, password: string): Promise<User | null> {
     try {
-      const id = crypto.randomUUID();
-      const created_at = new Date().toISOString();
-
-      // Check if email already exists
-      const existingUser = this.db.exec(
-        'SELECT id FROM users WHERE email = ?',
-        [userData.email]
-      );
-
-      if (existingUser.length > 0 && existingUser[0].values.length > 0) {
-        throw new Error('Email already exists');
+      if (!this.initialized) {
+        console.log('Initializing database for authentication...');
+        await this.initialize();
       }
 
-      this.db.run(
-        'INSERT INTO users (id, email, password, name, occupation, location, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [id, userData.email, userData.password, userData.name, userData.occupation || null, userData.location || null, created_at]
-      );
+      if (!this.db) {
+        console.error('Database not initialized after initialization attempt');
+        throw new Error('Database not initialized');
+      }
 
-      return {
-        id,
-        ...userData,
-        created_at
+      console.log('Attempting to authenticate user:', email);
+      
+      // Log database state
+      const tablesResult = this.db.exec("SELECT name FROM sqlite_master WHERE type='table'");
+      console.log('Current database tables:', tablesResult?.[0]?.values);
+      
+      const countResult = this.db.exec('SELECT COUNT(*) as count FROM users');
+      console.log('Total users in database:', countResult?.[0]?.values?.[0]?.[0]);
+
+      const userRows = this.db.exec('SELECT * FROM users WHERE email = ?', [email]);
+      console.log('User lookup result:', userRows ? 'Results found' : 'No results');
+      
+      if (!userRows || !userRows[0]?.values || !userRows[0]?.values[0]) {
+        console.log('No user found with email:', email);
+        return null;
+      }
+
+      const row = userRows[0].values[0];
+      const user = {
+        id: String(row[0]),
+        email: String(row[1]),
+        password: String(row[2]),
+        name: String(row[3]),
+        occupation: row[4] ? String(row[4]) : undefined,
+        location: row[5] ? String(row[5]) : undefined,
+        created_at: String(row[6])
       };
-    } catch (error) {
-      console.error('Error creating user:', error);
+
+      // Log password comparison (hash only in production)
+      console.log('Comparing passwords:', {
+        stored: user.password ? 'password exists' : 'no password',
+        provided: password ? 'password provided' : 'no password',
+        match: user.password === password
+      });
+
+      if (user.password === password) {
+        console.log('Password matched, authentication successful');
+        return user;
+      }
+
+      console.log('Password did not match');
+      return null;
+    } catch (error: any) {
+      console.error('Authentication error:', {
+        error: error?.message || 'Unknown error',
+        stack: error?.stack || 'No stack trace',
+        dbInitialized: this.initialized,
+        dbExists: !!this.db
+      });
       throw error;
     }
   }
@@ -260,53 +296,23 @@ class SQLiteService {
       }
 
       const query = 'SELECT * FROM users WHERE email = ?';
-      const stmt = this.db.prepare(query);
-      const row = stmt.get([email]) as any;
+      const rows = this.db.exec(query, [email]);
       
-      if (!row) {
+      if (!rows || !rows[0].values || !rows[0].values[0]) {
         return null;
       }
       
       return {
-        id: row.id,
-        email: row.email,
-        password: row.password,
-        name: row.name,
-        occupation: row.occupation,
-        location: row.location,
-        created_at: row.created_at
+        id: String(rows[0].values[0][0]),
+        email: String(rows[0].values[0][1]),
+        password: String(rows[0].values[0][2]),
+        name: String(rows[0].values[0][3]),
+        occupation: rows[0].values[0][4] ? String(rows[0].values[0][4]) : undefined,
+        location: rows[0].values[0][5] ? String(rows[0].values[0][5]) : undefined,
+        created_at: String(rows[0].values[0][6])
       };
     } catch (error) {
       console.error('Error getting user by email:', error);
-      throw error;
-    }
-  }
-
-  public async authenticateUser(email: string, password: string): Promise<User | null> {
-    try {
-      if (!this.initialized) {
-        console.log('Initializing database for authentication...');
-        await this.initialize();
-      }
-
-      console.log('Attempting to authenticate user:', email);
-      const user = await this.getUserByEmail(email);
-      
-      if (!user) {
-        console.log('No user found with email:', email);
-        return null;
-      }
-
-      console.log('User found, checking password...');
-      if (user.password === password) {  // Note: In production, this should use proper password hashing
-        console.log('Password matched, authentication successful');
-        return user;
-      }
-
-      console.log('Password did not match');
-      return null;
-    } catch (error) {
-      console.error('Authentication error:', error);
       throw error;
     }
   }
@@ -316,59 +322,53 @@ class SQLiteService {
       if (!this.db) await this.initialize();
       if (!this.db) throw new Error('Database not initialized');
       
-      const result = this.db.exec(
-        'SELECT * FROM users WHERE id = ?',
-        [id]
-      );
+      const query = 'SELECT * FROM users WHERE id = ?';
+      const rows = this.db.exec(query, [id]);
       
-      if (result.length > 0 && result[0].values.length > 0) {
-        const row = result[0].values[0];
-        const getValue = (value: any): string => value ? String(value) : '';
-        const getOptionalValue = (value: any): string | undefined => value ? String(value) : undefined;
-        
-        return {
-          id: getValue(row[0]),
-          email: getValue(row[1]),
-          password: getValue(row[2]),
-          name: getValue(row[3]),
-          occupation: getOptionalValue(row[4]),
-          location: getOptionalValue(row[5]),
-          created_at: getValue(row[6])
-        };
+      if (!rows || !rows[0].values || !rows[0].values[0]) {
+        return null;
       }
-      return null;
+      
+      return {
+        id: String(rows[0].values[0][0]),
+        email: String(rows[0].values[0][1]),
+        password: String(rows[0].values[0][2]),
+        name: String(rows[0].values[0][3]),
+        occupation: rows[0].values[0][4] ? String(rows[0].values[0][4]) : undefined,
+        location: rows[0].values[0][5] ? String(rows[0].values[0][5]) : undefined,
+        created_at: String(rows[0].values[0][6])
+      };
     } catch (error) {
       console.error('Error authenticating user by ID:', error);
       return null;
     }
   }
 
-  public async getAllUsers(): Promise<Omit<User, 'password'>[]> {
+  public async getUsers(): Promise<Omit<User, 'password'>[]> {
     if (!this.initialized) {
       await this.initialize();
     }
     
     if (!this.db) throw new Error('Database not initialized');
 
-    const result = this.db.exec(
-      'SELECT id, email, name, occupation, location, created_at FROM users ORDER BY created_at DESC'
-    );
-
-    if (!result.length) {
-      return [];
+    const results: Omit<User, 'password'>[] = [];
+    const query = 'SELECT id, email, name, occupation, location, created_at FROM users ORDER BY created_at DESC';
+    const rows = this.db.exec(query);
+    
+    if (rows && rows.length > 0 && rows[0].values) {
+      for (const row of rows[0].values) {
+        results.push({
+          id: String(row[0]),
+          email: String(row[1]),
+          name: String(row[2]),
+          occupation: row[3] ? String(row[3]) : undefined,
+          location: row[4] ? String(row[4]) : undefined,
+          created_at: String(row[5])
+        });
+      }
     }
 
-    const getValue = (value: any): string => value ? String(value) : '';
-    const getOptionalValue = (value: any): string | undefined => value ? String(value) : undefined;
-
-    return result[0].values.map(row => ({
-      id: getValue(row[0]),
-      email: getValue(row[1]),
-      name: getValue(row[2]),
-      occupation: getOptionalValue(row[3]),
-      location: getOptionalValue(row[4]),
-      created_at: getValue(row[5])
-    }));
+    return results;
   }
 
   // Research operations
@@ -390,34 +390,32 @@ class SQLiteService {
     return { id };
   }
 
-  public async getResearchEntries(userId: string): Promise<ResearchEntry[]> {
+  public async getResearchByUserId(userId: string): Promise<ResearchEntry[]> {
     if (!this.initialized) {
       await this.initialize();
     }
     
     if (!this.db) throw new Error('Database not initialized');
 
-    const result = this.db.exec(
-      'SELECT * FROM research WHERE user_id = ? ORDER BY created_at DESC',
-      [userId]
-    );
-
-    if (!result.length) {
-      return [];
+    const results: ResearchEntry[] = [];
+    const query = 'SELECT * FROM research WHERE user_id = ?';
+    const rows = this.db.exec(query, [userId]);
+    
+    if (rows && rows.length > 0 && rows[0].values) {
+      for (const row of rows[0].values) {
+        results.push({
+          id: String(row[0]),
+          user_id: String(row[1]),
+          title: String(row[2]),
+          content: JSON.parse(String(row[3])),
+          references: JSON.parse(String(row[4])),
+          created_at: String(row[5]),
+          updated_at: String(row[6])
+        });
+      }
     }
 
-    const getValue = (value: any): string => value ? String(value) : '';
-    const getJsonValue = (value: any): any => value ? JSON.parse(String(value)) : null;
-
-    return result[0].values.map(row => ({
-      id: getValue(row[0]),
-      user_id: getValue(row[1]),
-      title: getValue(row[2]),
-      content: getJsonValue(row[3]),
-      references: getJsonValue(row[4]),
-      created_at: getValue(row[5]),
-      updated_at: getValue(row[6])
-    }));
+    return results;
   }
 
   public async updateResearchEntry(id: string, updates: Partial<Omit<ResearchEntry, 'id' | 'created_at'>>): Promise<void> {
@@ -462,6 +460,61 @@ class SQLiteService {
     if (!this.db) throw new Error('Database not initialized');
 
     this.db.run('DELETE FROM research WHERE id = ?', [id]);
+  }
+
+  public async createUser(userData: CreateUserData): Promise<User> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+    
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      const created_at = new Date().toISOString();
+
+      // Check if email already exists
+      const checkQuery = 'SELECT id FROM users WHERE email = ?';
+      const existingRows = this.db.exec(checkQuery, [userData.email]);
+      
+      if (existingRows && existingRows.length > 0 && existingRows[0].values && existingRows[0].values.length > 0) {
+        throw new Error('Email already exists');
+      }
+
+      const insertQuery = `
+        INSERT INTO users (email, password, name, occupation, location, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `;
+
+      this.db.exec(insertQuery, [
+        userData.email,
+        userData.password,
+        userData.name || '',
+        userData.occupation || null,
+        userData.location || null,
+        created_at
+      ]);
+
+      // Get the last inserted id
+      const lastIdRows = this.db.exec('SELECT last_insert_rowid() as id');
+      if (!lastIdRows || !lastIdRows[0].values || !lastIdRows[0].values[0]) {
+        throw new Error('Failed to create user: No ID returned');
+      }
+
+      const id = String(lastIdRows[0].values[0][0]);
+
+      return {
+        id,
+        email: userData.email,
+        password: userData.password,
+        name: userData.name || '',
+        occupation: userData.occupation,
+        location: userData.location,
+        created_at
+      };
+    } catch (error) {
+      console.error('Error creating user:', error);
+      throw error;
+    }
   }
 
   // Export database
