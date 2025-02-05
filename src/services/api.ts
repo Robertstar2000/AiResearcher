@@ -679,7 +679,23 @@ if (typeof window === 'undefined') {
         return res.status(400).json({ success: false, error: 'Missing required fields' });
       }
 
-      console.log('Creating user...');
+      // Check if email exists in the latest database
+      console.log('Checking if email exists...');
+      const existingUser = await sqliteService.getUserByEmail(accountData.email);
+      
+      if (existingUser) {
+        console.log('Email already exists:', accountData.email);
+        return res.status(409).json({ 
+          success: false, 
+          error: 'Email already exists',
+          details: {
+            email: accountData.email,
+            suggestion: 'Please try logging in instead or use a different email'
+          }
+        });
+      }
+
+      console.log('Creating new user...');
       const user = await sqliteService.createUser(accountData);
       console.log('User created successfully:', user);
 
