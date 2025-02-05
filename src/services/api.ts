@@ -722,6 +722,46 @@ if (typeof window === 'undefined') {
     }
   });
 
+  // Add a login endpoint that loads the latest database before authentication
+  app.post('/login', async (req: Request, res: Response) => {
+    try {
+      console.log('Starting login process...');
+      console.log('Login data received:', req.body);
+
+      console.log('Loading latest database...');
+      await loadDatabaseFromBlob();
+      console.log('Database loaded successfully');
+
+      const { email, password } = req.body;
+      
+      if (!email || !password) {
+        console.error('Missing login credentials');
+        return res.status(400).json({ success: false, error: 'Email and password are required' });
+      }
+
+      console.log('Attempting to authenticate user...');
+      const user = await sqliteService.authenticateUser(email, password);
+      
+      if (user) {
+        console.log('Authentication successful');
+        res.status(200).json({ success: true, user });
+      } else {
+        console.log('Authentication failed');
+        res.status(401).json({ success: false, error: 'Invalid email or password' });
+      }
+    } catch (error: any) {
+      console.error('Login error:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error.message,
+        details: {
+          code: error.code,
+          errno: error.errno
+        }
+      });
+    }
+  });
+
   // Start the Express server on a specified port
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
