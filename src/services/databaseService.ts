@@ -52,12 +52,12 @@ export const saveResearchEntry = async (data: ResearchEntryData): Promise<{ id: 
 
 export const getResearchEntries = async (userId: string): Promise<ResearchEntry[]> => {
   try {
-    return await sqliteService.getResearchEntries(userId);
+    return await sqliteService.getResearchByUserId(userId);
   } catch (error) {
-    console.error('Error fetching research entries:', error);
+    console.error('Error getting research entries:', error);
     throw new ResearchException(
       ResearchError.DATABASE_ERROR,
-      'Failed to fetch research entries',
+      'Failed to get research entries',
       { originalError: error }
     );
   }

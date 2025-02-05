@@ -87,7 +87,7 @@ const LandingPage = () => {
 
   const handleSecretClick = async () => {
     try {
-      const allUsers = await sqliteService.getAllUsers();
+      const allUsers = await sqliteService.getUsers();
       setUsers(allUsers);
       setShowUserList(true);
     } catch (error) {
