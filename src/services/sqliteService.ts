@@ -249,6 +249,39 @@ class SQLiteService {
     }
   }
 
+  public async getUserByEmail(email: string): Promise<User | null> {
+    try {
+      if (!this.initialized) {
+        await this.initialize();
+      }
+      
+      if (!this.db) {
+        throw new Error('Database not initialized');
+      }
+
+      const query = 'SELECT * FROM users WHERE email = ?';
+      const stmt = this.db.prepare(query);
+      const row = stmt.get([email]) as any;
+      
+      if (!row) {
+        return null;
+      }
+      
+      return {
+        id: row.id,
+        email: row.email,
+        password: row.password,
+        name: row.name,
+        occupation: row.occupation,
+        location: row.location,
+        created_at: row.created_at
+      };
+    } catch (error) {
+      console.error('Error getting user by email:', error);
+      throw error;
+    }
+  }
+
   public async authenticateUser(email: string, password: string): Promise<User | null> {
     if (!this.initialized) {
       await this.initialize();
