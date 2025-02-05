@@ -664,16 +664,10 @@ if (typeof window === 'undefined') {
   // Signup endpoint
   app.post('/signup', async (req: Request, res: Response) => {
     try {
-      // Extract account data from the request body
+      await loadDatabaseFromBlob();
       const accountData = req.body;
-      
-      // Create a new user using the sqliteService (assumes sqliteService.createUser exists)
       const user = await sqliteService.createUser(accountData);
-      
-      // Save the updated SQLite DB to the Netlify blob
       await saveDatabaseToBlob();
-      
-      // Respond with success
       res.status(200).json({ success: true, user });
     } catch (error: any) {
       console.error('Signup endpoint error:', error);
