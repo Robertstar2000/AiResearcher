@@ -36,7 +36,7 @@ export default defineConfig(({ command, mode }) => {
       
       // Chunk splitting strategy
       rollupOptions: {
-        external: ['@netlify/blobs'],
+        external: ['@netlify/blobs', 'express'],
         output: {
           manualChunks: {
             vendor: ['react', 'react-dom', 'react-router-dom'],

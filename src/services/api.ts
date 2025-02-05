@@ -1,6 +1,7 @@
 // @ts-ignore
 import { z } from 'zod';
 import { sqliteService } from './sqliteService';
+import type { Request, Response } from 'express';
 
 // Use dynamic import for groq-sdk
 let Groq: any;
@@ -661,7 +662,7 @@ if (typeof window === 'undefined') {
   app.use(express.json());
 
   // Signup endpoint
-  app.post('/signup', async (req, res) => {
+  app.post('/signup', async (req: Request, res: Response) => {
     try {
       // Extract account data from the request body
       const accountData = req.body;
