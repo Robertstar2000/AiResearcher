@@ -664,14 +664,45 @@ if (typeof window === 'undefined') {
   // Signup endpoint
   app.post('/signup', async (req: Request, res: Response) => {
     try {
+      console.log('Starting signup process...');
+      console.log('Account data received:', req.body);
+
+      console.log('Loading latest database...');
       await loadDatabaseFromBlob();
+      console.log('Database loaded successfully');
+
       const accountData = req.body;
+      
+      // Validate required fields
+      if (!accountData.email || !accountData.password) {
+        console.error('Missing required fields:', { email: !!accountData.email, password: !!accountData.password });
+        return res.status(400).json({ success: false, error: 'Missing required fields' });
+      }
+
+      console.log('Creating user...');
       const user = await sqliteService.createUser(accountData);
+      console.log('User created successfully:', user);
+
+      console.log('Saving updated database to blob...');
       await saveDatabaseToBlob();
+      console.log('Database saved successfully');
+
       res.status(200).json({ success: true, user });
     } catch (error: any) {
-      console.error('Signup endpoint error:', error);
-      res.status(500).json({ success: false, error: error.message });
+      console.error('Detailed signup error:', {
+        message: error.message,
+        stack: error.stack,
+        code: error.code,
+        errno: error.errno
+      });
+      res.status(500).json({ 
+        success: false, 
+        error: error.message,
+        details: {
+          code: error.code,
+          errno: error.errno
+        }
+      });
     }
   });
 
