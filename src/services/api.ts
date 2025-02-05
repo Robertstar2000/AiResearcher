@@ -1,8 +1,6 @@
 // @ts-ignore
 import { z } from 'zod';
 import { sqliteService } from './sqliteService';
-import fs from 'fs';
-import { getBlob, putBlob } from '@netlify/blobs';
 
 // Use dynamic import for groq-sdk
 let Groq: any;
@@ -621,6 +619,12 @@ Reference and Citation Requirements:
 }
 
 async function loadDatabaseFromBlob(): Promise<void> {
+  if (typeof window !== 'undefined') {
+    console.log('Skipping loadDatabaseFromBlob in browser environment.');
+    return;
+  }
+  const fs = (await import('fs')).default;
+  const { getBlob } = await import('@netlify/blobs');
   try {
     const blob = await getBlob('sqlite.db');
     if (blob) {
@@ -635,6 +639,12 @@ async function loadDatabaseFromBlob(): Promise<void> {
 }
 
 async function saveDatabaseToBlob(): Promise<void> {
+  if (typeof window !== 'undefined') {
+    console.log('Skipping saveDatabaseToBlob in browser environment.');
+    return;
+  }
+  const fs = (await import('fs')).default;
+  const { putBlob } = await import('@netlify/blobs');
   try {
     const dbBuffer = fs.readFileSync('./sqlite.db');
     await putBlob('sqlite.db', dbBuffer);
