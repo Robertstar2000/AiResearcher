@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "scripts": {
     "dev": "vite",
+    "prebuild": "npm install @netlify/blobs",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "start": "vite",
@@ -15,6 +16,7 @@
     "@emotion/styled": "^11.11.0",
     "@mui/icons-material": "^5.15.5",
     "@mui/material": "^5.15.5",
+    "@netlify/blobs": "^8.1.0",
     "@reduxjs/toolkit": "^2.0.1",
     "@supabase/supabase-js": "^2.39.0",
     "@types/file-saver": "^2.0.7",
