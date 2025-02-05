@@ -623,8 +623,8 @@ async function loadDatabaseFromBlob(): Promise<void> {
     console.log('Skipping loadDatabaseFromBlob in browser environment.');
     return;
   }
-  const fs = (await import('fs')).default;
-  const { getBlob } = await import('@netlify/blobs');
+  const fs = require('fs');
+  const { getBlob } = require('@netlify/blobs');
   try {
     const blob = await getBlob('sqlite.db');
     if (blob) {
@@ -643,8 +643,8 @@ async function saveDatabaseToBlob(): Promise<void> {
     console.log('Skipping saveDatabaseToBlob in browser environment.');
     return;
   }
-  const fs = (await import('fs')).default;
-  const { putBlob } = await import('@netlify/blobs');
+  const fs = require('fs');
+  const { putBlob } = require('@netlify/blobs');
   try {
     const dbBuffer = fs.readFileSync('./sqlite.db');
     await putBlob('sqlite.db', dbBuffer);
@@ -652,6 +652,37 @@ async function saveDatabaseToBlob(): Promise<void> {
   } catch (error) {
     console.error('Error saving DB to blob:', error);
   }
+}
+
+// Register server-only endpoints
+if (typeof window === 'undefined') {
+  const express = require('express');
+  const app = express();
+  app.use(express.json());
+
+  // Signup endpoint
+  app.post('/signup', async (req, res) => {
+    try {
+      // Extract account data from the request body
+      const accountData = req.body;
+      
+      // Create a new user using the sqliteService (assumes sqliteService.createUser exists)
+      const user = await sqliteService.createUser(accountData);
+      
+      // Save the updated SQLite DB to the Netlify blob
+      await saveDatabaseToBlob();
+      
+      // Respond with success
+      res.status(200).json({ success: true, user });
+    } catch (error: any) {
+      console.error('Signup endpoint error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Start the Express server on a specified port
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
 }
 
 // Export functions for external use
