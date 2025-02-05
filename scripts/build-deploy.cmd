@@ -1,5 +1,7 @@
 @echo off
+:: Build and Deploy script
 echo Installing dependencies...
+npm install @netlify/blobs
 call npm install
 
 echo Building project...

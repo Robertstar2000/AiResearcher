@@ -1,6 +1,8 @@
 // @ts-ignore
 import { z } from 'zod';
 import { sqliteService } from './sqliteService';
+import fs from 'fs';
+import { getBlob, putBlob } from '@netlify/blobs';
 
 // Use dynamic import for groq-sdk
 let Groq: any;
@@ -177,6 +179,7 @@ class ResearchAPI {
   public static async initialize(): Promise<ResearchAPI> {
     if (!ResearchAPI.instance) {
       await loadGroq();
+      await loadDatabaseFromBlob();
 
       const groqApiKey = import.meta.env.VITE_GROQ_API_KEY;
       const groqApiUrl = import.meta.env.VITE_GROQ_API_URL;
@@ -616,6 +619,33 @@ Reference and Citation Requirements:
     }
   }
 }
+
+async function loadDatabaseFromBlob(): Promise<void> {
+  try {
+    const blob = await getBlob('sqlite.db');
+    if (blob) {
+      fs.writeFileSync('./sqlite.db', blob);
+      console.log('Database loaded from Netlify Blob.');
+    } else {
+      console.log('No blob found for sqlite.db.');
+    }
+  } catch (error) {
+    console.error('Error loading DB from blob:', error);
+  }
+}
+
+async function saveDatabaseToBlob(): Promise<void> {
+  try {
+    const dbBuffer = fs.readFileSync('./sqlite.db');
+    await putBlob('sqlite.db', dbBuffer);
+    console.log('Database saved to Netlify Blob.');
+  } catch (error) {
+    console.error('Error saving DB to blob:', error);
+  }
+}
+
+// Export functions for external use
+export { saveDatabaseToBlob };
 
 // Export a singleton instance that will be initialized when needed
 let researchApiInstance: ResearchAPI | null = null;
