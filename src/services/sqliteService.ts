@@ -283,35 +283,31 @@ class SQLiteService {
   }
 
   public async authenticateUser(email: string, password: string): Promise<User | null> {
-    if (!this.initialized) {
-      await this.initialize();
-    }
-    
-    if (!this.db) throw new Error('Database not initialized');
-
     try {
-      const result = this.db.exec(
-        'SELECT * FROM users WHERE email = ? AND password = ?',
-        [email, password]
-      );
+      if (!this.initialized) {
+        console.log('Initializing database for authentication...');
+        await this.initialize();
+      }
 
-      if (result.length === 0 || result[0].values.length === 0) {
+      console.log('Attempting to authenticate user:', email);
+      const user = await this.getUserByEmail(email);
+      
+      if (!user) {
+        console.log('No user found with email:', email);
         return null;
       }
 
-      const row = result[0].values[0];
-      return {
-        id: String(row[0]),
-        email: String(row[1]),
-        password: String(row[2]),
-        name: String(row[3]),
-        occupation: row[4] ? String(row[4]) : undefined,
-        location: row[5] ? String(row[5]) : undefined,
-        created_at: String(row[6])
-      };
-    } catch (error) {
-      console.error('Error authenticating user:', error);
+      console.log('User found, checking password...');
+      if (user.password === password) {  // Note: In production, this should use proper password hashing
+        console.log('Password matched, authentication successful');
+        return user;
+      }
+
+      console.log('Password did not match');
       return null;
+    } catch (error) {
+      console.error('Authentication error:', error);
+      throw error;
     }
   }
 

@@ -687,10 +687,10 @@ if (typeof window === 'undefined') {
         console.log('Email already exists:', accountData.email);
         return res.status(409).json({ 
           success: false, 
-          error: 'Email already exists',
+          error: 'User account exists',
           details: {
             email: accountData.email,
-            suggestion: 'Please try logging in instead or use a different email'
+            suggestion: 'Please try logging in instead'
           }
         });
       }
